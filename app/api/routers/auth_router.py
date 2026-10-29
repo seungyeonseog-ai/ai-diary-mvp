@@ -12,7 +12,7 @@ from fastapi import Request
 from app.models.schemas.auth_schema import LoginInput
 import logging
 logging.basicConfig(level=logging.INFO)
-from app.models.schemas.auth_schema import LogoutInput
+from app.api.dependencies.auth_dependencies import get_current_user
 
 
 
@@ -38,15 +38,15 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     # 중복된 username 확인
     if db.query(User).filter(User.username == user.username).first():
         raise HTTPException(status_code=400, detail="이미 사용 중인 아이디입니다.")
-    
+
     create_user(db, user)
 
     logging.info("✏️ register 라우터 완료")
     # 가공된 응답 변환
     return {"message": "회원가입이 성공적으로 완료되었습니다."}
-    
-    
-# 4. 로그인 라우터 
+
+
+# 4. 로그인 라우터
 
 @router.post("/login")
 def login(data: LoginInput, db: Session = Depends(get_db)):
@@ -82,12 +82,14 @@ def login(data: LoginInput, db: Session = Depends(get_db)):
 
 
 @router.post("/logout")
-def logout(data: LogoutInput, db: Session = Depends(get_db)):
-    user_id = data.user_id  # ✅ 이렇게 꺼냄
+def logout(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from app.models.db.login_log import LoginLog
-    log = db.query(LoginLog).filter(LoginLog.user_id == user_id).order_by(LoginLog.login_time.desc()).first()
+    log = db.query(LoginLog).filter(LoginLog.user_id == current_user.id).order_by(LoginLog.login_time.desc(), LoginLog.id.desc()).first()
     if log:
-        log.logout_time = get_kst_now()  # 시스템 로컬 시간 사용 (KST)
+        # 재시도/동시 요청에서도 최초 기록을 보존한다.
+        db.query(LoginLog).filter(LoginLog.id == log.id, LoginLog.logout_time.is_(None)).update(
+            {LoginLog.logout_time: get_kst_now()}, synchronize_session=False
+        )
         db.commit()
     print ("✅ 로그아웃 완료 : db 기록 성공")
     return {"message": "로그아웃 완료 (기록용)"}
@@ -99,4 +101,4 @@ def logout(data: LogoutInput, db: Session = Depends(get_db)):
 
 
 print("✅ register_router.py 로딩 완료")
-print("✅ router 객체:", router ) 
+print("✅ router 객체:", router )

@@ -55,24 +55,16 @@ class SimilarPatternService:
 
             used_dates: List[str] = report.used_dates or []
             
-            print(f"🔍 [DEBUG] used_dates 타입: {type(used_dates)}")
-            print(f"🔍 [DEBUG] used_dates 값: {used_dates}")
             
             # JSON 문자열인 경우 파싱
             if isinstance(used_dates, str):
                 try:
                     used_dates = json.loads(used_dates)
-                    print(f"🔍 [DEBUG] JSON 파싱 성공: {used_dates}")
                 except Exception as e:
-                    print(f"🔍 [DEBUG] JSON 파싱 실패: {e}")
                     used_dates = []
             
-            print(f"🔍 [DEBUG] _dates_to_yymmdd_set 호출 전: used_dates={used_dates}")
             exclude_yymmdd: Set[str] = self._dates_to_yymmdd_set(used_dates)
-            print(f"🔍 [DEBUG] _dates_to_yymmdd_set 호출 후: exclude_yymmdd={exclude_yymmdd}")
             
-            print(f"🔍 [DEBUG] used_dates 원본: {used_dates}")
-            print(f"🔍 [DEBUG] exclude_yymmdd 변환: {exclude_yymmdd}")
 
             raw = self.vdb.search_similar(
                 query,
@@ -81,15 +73,6 @@ class SimilarPatternService:
                 return_similarity=True,
             )
             
-            print(f"🔍 [DEBUG] 벡터 검색 결과 수: {len(raw)}")
-            if raw:
-                print(f"🔍 [DEBUG] 첫 번째 결과 metadata: {raw[0].get('metadata', {})}")
-                # 처음 5개 결과의 session_id 확인
-                for i, item in enumerate(raw[:5]):
-                    meta = item.get("metadata", {})
-                    sid = meta.get("session_id", "NO_SESSION_ID")
-                    print(f"🔍 [DEBUG] 결과 {i+1} - session_id: '{sid}', 전체 metadata: {meta}")
-
             # 임계값 필터
             if min_similarity is not None:
                 raw = [x for x in raw if (x.get("similarity") is not None and x["similarity"] >= float(min_similarity))]
@@ -102,15 +85,12 @@ class SimilarPatternService:
                 sid = str(meta.get("session_id") or "")
                 sid_yymmdd = self._session_id_to_yymmdd(sid)
                 
-                print(f"🔍 [DEBUG] 세션 체크 - sid: '{sid}', sid_yymmdd: '{sid_yymmdd}', exclude_yymmdd: {exclude_yymmdd}")
                 
                 if sid_yymmdd and sid_yymmdd in exclude_yymmdd:   
                     excluded_count += 1
                     continue
-                print(f"🔍 [DEBUG] 제외됨: {sid} (yymmdd: {sid_yymmdd})")
                 out.append(item)
             
-            print(f"🔍 [DEBUG] 제외된 세션 수: {excluded_count}, 최종 결과 수: {len(out)}")
 
             return out
         finally:
@@ -120,24 +100,17 @@ class SimilarPatternService:
     def _dates_to_yymmdd_set(self, dates: List[str]) -> Set[str]:
         """"YYYY-MM-DD" 문자열 리스트 → {"yymmdd", ...} 집합"""
         res: Set[str] = set()
-        print(f"🔍 [DEBUG] _dates_to_yymmdd_set 입력: {dates}, 타입: {type(dates)}")
         
         if not dates:
-            print(f"🔍 [DEBUG] dates가 비어있음")
             return res
             
         for i, d in enumerate(dates):
-            print(f"🔍 [DEBUG] 요소 {i}: '{d}', 타입: {type(d)}")
             try:
-                print(f"🔍 [DEBUG] 날짜 변환 시도: '{d}'")
                 dt = datetime.strptime(str(d), "%Y-%m-%d")
                 yymmdd = dt.strftime("%y%m%d")
                 res.add(yymmdd)
-                print(f"🔍 [DEBUG] 날짜 변환 성공: '{d}' → '{yymmdd}'")
-            except Exception as e:
-                print(f"🔍 [DEBUG] 날짜 변환 실패: '{d}' - {e}")
-                logger.debug("dates_to_yymmdd_skip invalid=%s", d)
-        print(f"🔍 [DEBUG] 최종 변환 결과: {res}")
+            except Exception:
+                pass
         return res
 
     def _session_id_to_yymmdd(self, session_id: str) -> Optional[str]:
@@ -146,18 +119,13 @@ class SimilarPatternService:
         잘못된 포맷이면 None
         """
         if not session_id:
-            print(f"🔍 [DEBUG] session_id가 비어있음")
             return None
         try:
             y = session_id.split("_")[0]
-            print(f"🔍 [DEBUG] session_id '{session_id}' → 분할 후 '{y}'")
             if len(y) == 6 and y.isdigit():
-                print(f"🔍 [DEBUG] yymmdd 추출 성공: '{y}'")
                 return y
-            else:
-                print(f"🔍 [DEBUG] yymmdd 형식 아님: 길이={len(y)}, 숫자여부={y.isdigit()}")
-        except Exception as e:
-            print(f"🔍 [DEBUG] session_id 파싱 실패: '{session_id}' - {e}")
+        except Exception:
+            pass
         return None
 
 

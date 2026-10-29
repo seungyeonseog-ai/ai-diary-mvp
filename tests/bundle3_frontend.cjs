@@ -23,7 +23,7 @@ function setup() {
   const ids = new Map(), listeners = new Map(), windowListeners = new Map(), calls = [], events = [], timers = [];
   const charts = new Map();
   class Element {
-    constructor(tag='div') {this.tagName=tag;this.children=[];this.style={};this.dataset={};this.attrs={};this._text='';
+    constructor(tag='div') {this.isConnected=true;this.tagName=tag;this.children=[];this.style={};this.dataset={};this.attrs={};this._text='';
       const classes = new Set();
       this.classList={add:x=>classes.add(x),remove:x=>classes.delete(x),contains:x=>classes.has(x),
         toggle:(x,on)=>on ? classes.add(x):classes.delete(x)};
@@ -49,10 +49,17 @@ function setup() {
   }
   buildDom();
   let remote=state(), failStatus=false, failLetter=false, failWeekly=false, holdStatus=null;
+  let chartFault=null, failNotify=false, weeklyOverride=null, storageFull=false;
   class FakeChart {
-    constructor(element, config) {this.config=config;this.element=element;charts.set(element.id,this);}
+    constructor(element, config) {
+      if (chartFault==='constructor' || (chartFault==='second' && element.id==='radarChart')) throw new Error('synthetic chart failure');
+      this.config=config;this.element=element;this.canvas=element;
+      this.ctx=chartFault==='context' ? null : {};this.width=chartFault==='size' ? 0 : 600;this.height=300;
+      charts.set(element.id,this);
+    }
+    draw() {if(chartFault==='draw')throw new Error('synthetic draw failure');this.drawn=true;}
     destroy() {charts.delete(this.element.id);}
-    static getChart(id) {return charts.get(id);}
+    static getChart(id) {return charts.get(typeof id==='string' ? id : id?.id);}
   }
   const document = {visibilityState:'visible',
     getElementById:id=>ids.get(id)||null, createElement:tag=>new Element(tag),
@@ -65,7 +72,7 @@ function setup() {
   const context=vm.createContext({window,document,Intl,Date,Chart:FakeChart,Promise,
     console:{log(){},error(){},warn(){}},
     CustomEvent:class{constructor(type,opts){this.type=type;this.detail=opts.detail;}},
-    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
+    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(storageFull && k.startsWith('seven_day_report'))throw new Error('synthetic quota');storage.set(k,String(v));},removeItem:k=>storage.delete(k)},
     setInterval:fn=>timers.push(fn),setTimeout:fn=>fn(),
     fetch:async(url,opts)=>{
       calls.push({url,opts});
@@ -77,8 +84,8 @@ function setup() {
         id:remote.encouragement.id,date:remote.server_date,server_date:remote.server_date,
         timestamp:remote.server_date+'T12:00:00+09:00',encourage_content:letterText})};
       if(url.startsWith('/study/seven-day-report/')) return {ok:!failWeekly,status:failWeekly?409:200,json:async()=>{
-        const data=weeklyData();data.weekly_analysis.id=Number(url.split('/').pop());return data;}};
-      if(url==='/study/chart-loading-complete') return {ok:true};
+        const data=weeklyOverride ? structuredClone(weeklyOverride) : weeklyData();data.weekly_analysis.id=Number(url.split('/').pop());return data;}};
+      if(url==='/study/chart-loading-complete') return {ok:!failNotify};
       throw new Error('Unexpected endpoint '+url);
     }
   });
@@ -88,10 +95,14 @@ function setup() {
   const flush=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
   return {context,window,manager,storage,ids,calls,events,timers,charts,document,buildDom,flush,
     setRemote:value=>remote=value, setFailStatus:value=>failStatus=value,
-    setFailLetter:value=>failLetter=value,setFailWeekly:value=>failWeekly=value,setHold:value=>holdStatus=value};
+    setFailLetter:value=>failLetter=value,setFailWeekly:value=>failWeekly=value,setHold:value=>holdStatus=value,setChartFault:value=>chartFault=value,
+    setFailNotify:value=>failNotify=value,setWeeklyData:value=>weeklyOverride=value,
+    setStorageFull:value=>storageFull=value,chartClass:FakeChart};
 }
 
-(async()=>{
+module.exports={setup,state,weeklyData};
+
+if (require.main === module) (async()=>{
   let count=0;
   async function test(name,run) {await run();count++;console.log('PASS '+name);}
   await test('캐시·알림 없이 저장된 응원/주간 복원',async()=>{

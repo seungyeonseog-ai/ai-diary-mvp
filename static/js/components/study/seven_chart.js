@@ -36,11 +36,15 @@ async function fetchSevenDayReportData(analysisId) {
   if (!canvas) return;
   const token = localStorage.getItem('access_token');
   const key = `${localStorage.getItem('user_id')}|${analysisId}`;
-  if (lastRestoredChart?.key === key && lastRestoredChart.canvas === canvas && lastRestoredChart.token === token) return;
   if (chartRequest?.key === key && chartRequest.token === token) return chartRequest.promise;
   showChartRestoreStatus('저장된 주간 분석을 불러오고 있습니다.');
   const promise = (async () => {
     try {
+      if (lastRestoredChart?.key === key && lastRestoredChart.canvas === canvas && lastRestoredChart.token === token && isCurrentChartProof(lastRestoredChart)) {
+        if (!lastRestoredChart.notified) await finishChartNotification(lastRestoredChart);
+        else showChartRestoreStatus('');
+        return;
+      }
       const response = await fetch(`/study/seven-day-report/${analysisId}`, {
         headers:{Authorization:`Bearer ${token}`}, cache:'no-store'
       });
@@ -50,14 +54,23 @@ async function fetchSevenDayReportData(analysisId) {
       if (localStorage.getItem('access_token') !== token ||
           window.studyState.current()?.weekly.analysis_id !== analysisId ||
           document.getElementById('emotionTrendChart') !== canvas) return;
-      localStorage.setItem('seven_day_report_data', JSON.stringify({...data, analysis_id:analysisId,
-        week_start_date:data.weekly_analysis.start_date, week_end_date:data.weekly_analysis.end_date}));
-      localStorage.setItem('seven_day_report_owner', localStorage.getItem('user_id'));
-      renderSevenDayCharts(data);
-      lastRestoredChart = {key, canvas, token};
-      showChartRestoreStatus('');
-      // 실제 렌더 실패의 완료 판단은 다음 M13 묶음에서 다룬다.
-      notifyChartLoadingComplete(analysisId);
+      const rendered = renderSevenDayCharts(data);
+      if (!rendered.ok) {
+        lastRestoredChart = null;
+        localStorage.removeItem('seven_day_report_data');
+        localStorage.removeItem('seven_day_report_owner');
+        showChartRestoreStatus(rendered.message, true);
+        return;
+      }
+      const proof = {key, canvas, token, analysisId, data, charts:rendered.charts, notified:false};
+      lastRestoredChart = proof;
+      // 캐시 쓰기 실패가 실제 표시 성공을 실패로 바꾸지는 않는다.
+      try {
+        localStorage.setItem('seven_day_report_data', JSON.stringify({...data, analysis_id:analysisId,
+          week_start_date:data.weekly_analysis.start_date, week_end_date:data.weekly_analysis.end_date}));
+        localStorage.setItem('seven_day_report_owner', localStorage.getItem('user_id'));
+      } catch (_) { console.warn('주간 차트 캐시 저장 실패'); }
+      await finishChartNotification(proof);
     } catch (_) {
       if (localStorage.getItem('access_token') === token && document.getElementById('emotionTrendChart') === canvas) {
         showChartRestoreStatus('주간 분석을 불러오지 못했습니다.', true);
@@ -81,89 +94,111 @@ async function syncSevenChart(status) {
     '주간 분석 생성을 기다리고 있습니다.' : '아직 주간 분석에 필요한 일일 분석이 부족합니다.');
 }
 
-// 로딩 완료 알림 - 서버에 전송
+function isCurrentChartProof(proof) {
+  if (!proof || proof.token !== localStorage.getItem('access_token') ||
+      document.getElementById('emotionTrendChart') !== proof.canvas ||
+      window.studyState.current()?.weekly.analysis_id !== proof.analysisId ||
+      (typeof Chart === 'undefined' || typeof Chart.getChart !== 'function')) return false;
+  return proof.charts.every(chart => chart.ctx && chart.width > 0 && chart.height > 0 &&
+    Chart.getChart(chart.canvas) === chart && chart.canvas.isConnected);
+}
+
+async function finishChartNotification(proof) {
+  if (!isCurrentChartProof(proof)) return;
+  const sent = await notifyChartLoadingComplete(proof.analysisId);
+  if (!isCurrentChartProof(proof)) return;
+  proof.notified = sent;
+  showChartRestoreStatus(sent ? '' : '차트는 표시됐지만 완료 알림을 보내지 못했습니다.', !sent);
+}
+
+// 실제 그리기 성공 증거가 현재 계정·결과·화면과 일치할 때만 보낸다.
 async function notifyChartLoadingComplete(analysisId) {
+  const proof = lastRestoredChart;
+  if (!isCurrentChartProof(proof) || proof.analysisId !== analysisId) return false;
+  if (proof.notified) return true;
   try {
-    console.log('📤 차트 로딩 완료 알림 전송:', analysisId);
-    
-    // 기존 데이터에서 날짜 정보 추출
-    const existingData = localStorage.getItem('seven_day_report_data');
-    let weekStartDate = null;
-    let weekEndDate = null;
-    
-    if (existingData) {
-      try {
-        const data = JSON.parse(existingData);
-        if (data.weekly_analysis && data.weekly_analysis.start_date && data.weekly_analysis.end_date) {
-          // 서버에서 이미 mm-dd 형식으로 받았으므로 그대로 사용
-          weekStartDate = data.weekly_analysis.start_date;
-          weekEndDate = data.weekly_analysis.end_date;
-        }
-      } catch (error) {
-        console.error('❌ 기존 데이터 파싱 실패');
-      }
-    }
-    
     const response = await fetch('/study/chart-loading-complete', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-      },
-      body: JSON.stringify({ 
-        analysis_id: analysisId,
-        status: 'completed',
-        week_start_date: weekStartDate,
-        week_end_date: weekEndDate
-      })
+      method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${proof.token}`},
+      body:JSON.stringify({analysis_id:analysisId,status:'completed',
+        week_start_date:proof.data.weekly_analysis.start_date,
+        week_end_date:proof.data.weekly_analysis.end_date})
     });
-    
-    if (response.ok) {
-      console.log('✅ 차트 로딩 완료 알림 전송 성공');
-    } else {
-      console.error('❌ 차트 로딩 완료 알림 전송 실패:', response.status);
+    return response.ok;
+  } catch (_) { return false; }
+}
+
+function validateChartData(data) {
+  if (!Array.isArray(data?.diary_analyses) || data.diary_analyses.length === 0) {
+    return '표시할 일일 분석 자료가 없습니다.';
+  }
+  const isObject = value => value && typeof value === 'object' && !Array.isArray(value);
+  const weekly = data.weekly_analysis;
+  if (!isObject(weekly) || !isObject(weekly.emotion_trend)) return '주간 분석 자료의 형식이 올바르지 않습니다.';
+  let keywords = weekly.keyword_patterns;
+  try { if (typeof keywords === 'string') keywords = JSON.parse(keywords); }
+  catch (_) { return '주간 분석 자료의 형식이 올바르지 않습니다.'; }
+  if (!isObject(keywords) || (keywords.main_themes !== undefined &&
+      (!Array.isArray(keywords.main_themes) || keywords.main_themes.some(v => typeof v !== 'string'))) ||
+      (keywords.insights !== undefined && typeof keywords.insights !== 'string')) {
+    return '주간 분석 자료의 형식이 올바르지 않습니다.';
+  }
+  if (data.diary_analyses.some(row => !row || typeof row.date_str !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(row.date_str) || !Number.isFinite(Date.parse(row.date_str)) ||
+      !Array.isArray(row.scores) || row.scores.length === 0 ||
+      row.scores.some(value => typeof value !== 'number' || !Number.isFinite(value)) ||
+      !Number.isFinite(row.scores.reduce((sum,value) => sum+value,0)))) {
+    return '차트의 날짜 또는 점수 자료가 올바르지 않습니다.';
+  }
+  const overall = weekly.comprehensive_pattern_result;
+  if (overall !== undefined && !isObject(overall)) return '주간 분석 자료의 형식이 올바르지 않습니다.';
+  for (const value of [overall?.life_satisfaction, weekly.emotion_trend.emotion_stability, overall?.stress_level]) {
+    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
+      return '차트의 점수 자료가 올바르지 않습니다.';
     }
-  } catch (error) {
-    console.error('❌ 차트 로딩 완료 알림 전송 실패');
   }
+  return null;
 }
 
-// 차트 렌더링 함수
 function renderSevenDayCharts(data) {
-  console.log('🎨 7일 리포트 차트 렌더링 시작');
-  
+  const libraryReady = typeof Chart === 'function' && typeof Chart.getChart === 'function';
+  let message = !libraryReady ? '차트 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.' : validateChartData(data);
+  if (!message && (!document.getElementById('emotionTrendChart') || !document.getElementById('radarChart'))) {
+    message = '차트를 표시할 화면을 찾지 못했습니다.';
+  }
+  if (message) {
+    clearFailedChartDisplay();
+    return {ok:false,message};
+  }
   try {
-    // 기존 차트 제거
     destroyExistingCharts();
-    
-    // 감정 트렌드 라인 차트 렌더링
-    renderEmotionTrendChart(data);
-    
-    // 레이더 차트 렌더링
-    renderRadarChart(data);
-    
-    // 감정 트렌드 텍스트 표시
+    const charts = [renderEmotionTrendChart(data), renderRadarChart(data)];
+    if (charts.some(chart => !chart?.ctx || !chart.canvas?.isConnected || !Number.isFinite(chart.width) || !Number.isFinite(chart.height) || chart.width <= 0 || chart.height <= 0)) {
+      throw new Error('chart_context_unavailable');
+    }
+    // 첫 그리기는 애니메이션 없이 동기 처리해 완료 시점을 명확히 한다.
+    for (const chart of charts) chart.draw();
     renderEmotionTrendText(data);
-    
-    // 종합 평가 텍스트 표시
     renderComprehensiveAssessment(data);
-    
-    console.log('✅ 7일 리포트 차트 렌더링 완료');
-  } catch (error) {
-    console.error('❌ 차트 렌더링 실패');
+    return {ok:true,charts};
+  } catch (_) {
+    clearFailedChartDisplay();
+    return {ok:false,message:'차트를 표시하지 못했습니다. 다시 시도해 주세요.'};
   }
 }
 
-// 기존 차트 제거
-function destroyExistingCharts() {
-  const charts = Chart.getChart('emotionTrendChart');
-  if (charts) {
-    charts.destroy();
+function clearFailedChartDisplay() {
+  destroyExistingCharts();
+  for (const id of ['mainTrend','dominantEmotion','recommendations','weeklyAssessment','mainThemesList','insightsContainer']) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = '';
   }
-  
-  const radarChart = Chart.getChart('radarChart');
-  if (radarChart) {
-    radarChart.destroy();
+}
+
+function destroyExistingCharts() {
+  if (typeof Chart === 'undefined' || typeof Chart.getChart !== 'function') return;
+  for (const id of ['emotionTrendChart','radarChart']) {
+    try { Chart.getChart(id)?.destroy(); }
+    catch (_) { console.warn('기존 차트 정리 실패'); }
   }
 }
 
@@ -195,7 +230,7 @@ function renderEmotionTrendChart(data) {
   
   const scores = chartData.map(item => item.score);
   
-  new Chart(ctx, {
+  return new Chart(ctx, {
     type: 'line',
     data: {
       labels: labels,
@@ -218,6 +253,7 @@ function renderEmotionTrendChart(data) {
     },
     options: {
       responsive: true,
+      animation: false,
       maintainAspectRatio: false,
       plugins: {
         legend: {
@@ -307,7 +343,7 @@ function renderRadarChart(data) {
     stress_level: weeklyData.comprehensive_pattern_result?.stress_level || 0
   };
   
-  new Chart(ctx, {
+  return new Chart(ctx, {
     type: 'radar',
     data: {
       labels: ['생활 만족도', '감정 안정성', '스트레스 수준'],
@@ -329,6 +365,7 @@ function renderRadarChart(data) {
     },
     options: {
       responsive: true,
+      animation: false,
       maintainAspectRatio: false,
       plugins: {
         legend: {

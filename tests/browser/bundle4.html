@@ -1,0 +1,40 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><title>M13 차트 표시·완료 검증 — 격리 앱</title>
+<style>body{font:15px/1.5 sans-serif;margin:16px;background:#f8f6f3;color:#333}button{padding:8px;margin:4px}
+iframe{width:100%;height:1000px;border:1px solid #ddd;background:white}#result{white-space:pre-wrap;font-weight:bold;color:#176746}</style>
+<h1>M13 차트 표시와 완료 알림 검증</h1>
+<p>실제 앱 화면·Chart.js·API / 합성 메모리 DB / 운영 DB·Redis·유료 AI 사용 없음</p>
+<button data-mode="ready">정상 표시</button><button data-mode="library">라이브러리 없음</button>
+<button data-mode="invalid">잘못된 점수</button><button data-mode="empty">빈 자료</button>
+<button data-mode="notify_failure">완료 알림 장애</button><button id="recover">장애 해제·재시도</button>
+<p id="result" role="status">준비 중</p><div id="app-host"></div>
+<script>
+let frame,library='normal',mode='ready',busy=false;
+async function load(modeName) {
+ busy=true;mode=modeName;library=modeName==='library'?'missing':'normal';
+ await fetch('/test/reset-observed',{method:'POST'});
+ await fetch('/test/scenario/'+(modeName==='library'?'ready':modeName),{method:'POST'});
+ const session=await (await fetch('/test/session')).json();
+ localStorage.clear();localStorage.setItem('access_token',session.access_token);
+ localStorage.setItem('user_id',String(session.user_id));localStorage.setItem('nickname','합성 검증 계정');
+ if(frame)frame.remove();frame=document.createElement('iframe');frame.title='M13 실제 앱 격리 검증';
+ frame.src='/test/app?library='+library;document.getElementById('app-host').appendChild(frame);busy=false;
+}
+document.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>load(button.dataset.mode));
+document.getElementById('recover').onclick=async()=>{
+ await fetch('/test/scenario/ready',{method:'POST'});
+ if(library==='missing') {library='normal';frame.src='/test/app?library=normal';}
+ else frame.contentWindow.studyState.refresh(true);
+ mode='recovered';
+};
+setInterval(async()=>{
+ if(busy||!frame?.contentWindow.studyState)return;
+ const doc=frame.contentDocument,Chart=frame.contentWindow.Chart;
+ const graphs=Chart?['emotionTrendChart','radarChart'].filter(id=>Chart.getChart(id)).length:0;
+ const observed=await (await fetch('/test/observed')).json();
+ const error=doc.getElementById('chart-restore-status');
+ document.getElementById('result').textContent='검사: '+mode+' / 실제 차트: '+graphs+'개'+
+  ' / 완료 POST: '+observed.requests.completion+'건 / 주간 조회: '+observed.requests.weekly+'건'+
+  '\n화면 안내: '+(error&&!error.hidden?error.textContent:'없음');
+},500);
+load('ready');
+</script></html>

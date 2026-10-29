@@ -1,5 +1,6 @@
 """실제 앱 화면/라우터를 쓰는 격리 브라우저 검증 서버. 운영 DB·Redis·AI 사용 없음."""
 import os
+import json
 os.environ.update(DATABASE_URL='sqlite:///:memory:', SECRET_KEY='bundle3-browser-only-secret',
                   OPENAI_API_KEY='test-only-no-network', PYTHONUTF8='1')
 from pathlib import Path
@@ -30,7 +31,7 @@ Sessions = sessionmaker(bind=engine)
 clock = [datetime(2026,10,29,12)]
 mode = ['ready']
 sockets = set()
-requests = {'status':0, 'letter':0, 'weekly':0}
+requests = {'status':0, 'letter':0, 'weekly':0, 'completion':0}
 with Sessions() as db:
     db.add(User(id=1, username='browser-synthetic', nickname='합성 검증 계정',
                 email='browser@example.org', hashed_password='unused'))
@@ -50,7 +51,7 @@ def seed(kind):
         dates = [(base-timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7,0,-1)]
         for i, day in enumerate(dates):
             db.add(DiaryAnalysisReport(user_id=1,date_str=day,timestamp=datetime.fromisoformat(day),
-                emotions=['기쁨','평온','기대'],scores=[0.3+i*0.05,0.3,0.2],
+                emotions=['기쁨','평온','기대'],scores=['invalid'] if kind=='invalid' else [0.2+i*0.03,0.3,0.1],
                 keywords=['성장','휴식','연결'],keyword_descriptions=['합성 설명']*3,
                 summary='합성 요약',is_used_in_weekly=kind!='pending'))
         if kind != 'pending':
@@ -88,7 +89,15 @@ async def controlled_failure(request, call_next):
         if mode[0] == 'error': return JSONResponse({'detail':'합성 상태 조회 장애'},status_code=503)
     if request.url.path == '/study/encourage': requests['letter'] += 1
     if request.url.path.startswith('/study/seven-day-report/'): requests['weekly'] += 1
+    if request.url.path == '/study/chart-loading-complete':
+        requests['completion'] += 1
+        if mode[0] == 'notify_failure': return JSONResponse({'detail':'합성 알림 장애'},status_code=503)
     response = await call_next(request)
+    if mode[0] == 'empty' and request.url.path.startswith('/study/seven-day-report/') and response.status_code == 200:
+        body = b''.join([part async for part in response.body_iterator])
+        payload = json.loads(body)
+        payload['diary_analyses'] = []
+        response = JSONResponse(payload)
     response.headers['Cache-Control'] = 'no-store'
     return response
 
@@ -99,9 +108,11 @@ def fixture():
 
 
 @app.get('/test/app',response_class=HTMLResponse)
-def actual_app():
+def actual_app(library:str='normal'):
+    content = (ROOT/'templates/mypage_edit.html').read_text(encoding='utf-8')
+    if library == 'missing': content=content.replace('<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>','')
     return '<!doctype html><html lang="ko"><meta charset="utf-8"><title>격리 앱 화면</title><body>' + \
-        (ROOT/'templates/mypage_edit.html').read_text(encoding='utf-8') + '</body></html>'
+        content + '</body></html>'
 
 
 @app.get('/test/session')
@@ -111,13 +122,24 @@ def session():
 
 @app.post('/test/scenario/{kind}')
 async def scenario(kind:str):
-    if kind not in {'ready','yesterday','nextday','pending','error','reconnect'}:
+    if kind not in {'ready','yesterday','nextday','pending','error','reconnect','invalid','empty','notify_failure'}:
         return JSONResponse({'detail':'unknown scenario'},status_code=400)
     mode[0] = 'ready' if kind=='reconnect' else kind
     seed('new' if kind=='reconnect' else kind)
     if kind=='reconnect':
         for socket in list(sockets): await socket.close(code=1012)
     return {'scenario':kind,'server_date':clock[0].date().isoformat(),'requests':requests.copy()}
+
+
+@app.get('/test/bundle4')
+def fixture4():
+    return FileResponse(Path(__file__).with_name('bundle4.html'))
+
+
+@app.post('/test/reset-observed')
+def reset_observed():
+    for key in requests: requests[key]=0
+    return {'ok':True}
 
 
 @app.get('/test/observed')

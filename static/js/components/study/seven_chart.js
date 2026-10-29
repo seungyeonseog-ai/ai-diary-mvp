@@ -21,15 +21,8 @@ async function fetchSevenDayReportData(analysisId) {
     
     if (response.ok) {
       const data = await response.json();
-      console.log('✅ 7일 리포트 데이터 수신:', data);
-      
-      // 데이터 구조 상세 출력
-      console.log('📊 weekly_analysis 데이터:', data.weekly_analysis);
+      console.log('✅ 7일 리포트 데이터 수신: ID', analysisId);
       console.log('📊 diary_analyses 개수:', data.diary_analyses.length);
-      console.log('📊 diary_analyses 첫 번째 데이터:', data.diary_analyses[0]);
-      console.log('📊 emotion_trend 결과:', data.weekly_analysis.emotion_trend);
-      console.log('📊 keyword_patterns 결과:', data.weekly_analysis.keyword_patterns);
-      console.log('📊 overall_assessment 결과:', data.weekly_analysis.overall_assessment);
       
       // 로컬스토리지에 저장 (analysis_id, 날짜 정보 포함)
       const dataWithDates = {
@@ -49,7 +42,7 @@ async function fetchSevenDayReportData(analysisId) {
       console.error('❌ 7일 리포트 데이터 요청 실패:', response.status);
     }
   } catch (error) {
-    console.error('❌ 7일 리포트 데이터 가져오기 실패:', error);
+    console.error('❌ 7일 리포트 데이터 가져오기 실패');
   }
 }
 
@@ -72,7 +65,7 @@ async function notifyChartLoadingComplete(analysisId) {
           weekEndDate = data.weekly_analysis.end_date;
         }
       } catch (error) {
-        console.error('❌ 기존 데이터 파싱 실패:', error);
+        console.error('❌ 기존 데이터 파싱 실패');
       }
     }
     
@@ -96,13 +89,13 @@ async function notifyChartLoadingComplete(analysisId) {
       console.error('❌ 차트 로딩 완료 알림 전송 실패:', response.status);
     }
   } catch (error) {
-    console.error('❌ 차트 로딩 완료 알림 전송 실패:', error);
+    console.error('❌ 차트 로딩 완료 알림 전송 실패');
   }
 }
 
 // 차트 렌더링 함수
 function renderSevenDayCharts(data) {
-  console.log('🎨 7일 리포트 차트 렌더링 시작:', data);
+  console.log('🎨 7일 리포트 차트 렌더링 시작');
   
   try {
     // 기존 차트 제거
@@ -122,7 +115,7 @@ function renderSevenDayCharts(data) {
     
     console.log('✅ 7일 리포트 차트 렌더링 완료');
   } catch (error) {
-    console.error('❌ 차트 렌더링 실패:', error);
+    console.error('❌ 차트 렌더링 실패');
   }
 }
 
@@ -253,7 +246,7 @@ function renderEmotionTrendChart(data) {
             const { showChartPopup } = await import('/static/js/components/popup/chart_popup.js');
             showChartPopup(diaryData);
           } catch (error) {
-            console.error('❌ chart_popup 로드 실패:', error);
+            console.error('❌ chart_popup 로드 실패');
           }
         }
       }
@@ -413,7 +406,6 @@ function renderComprehensiveAssessment(data) {
   
   // keyword_patterns에서 데이터 가져오기
   const keywordPatterns = data.weekly_analysis?.keyword_patterns;
-  console.log('📊 keyword_patterns 데이터:', keywordPatterns);
   
   if (!keywordPatterns) {
     assessmentContainer.innerHTML = '<div class="chart-loading">현재 수집된 데이터가 부족해 표시할 수 없습니다.</div>';
@@ -426,7 +418,7 @@ function renderComprehensiveAssessment(data) {
     try {
       parsedData = JSON.parse(keywordPatterns);
     } catch (error) {
-      console.error('❌ keyword_patterns 파싱 실패:', error);
+      console.error('❌ keyword_patterns 파싱 실패');
       assessmentContainer.innerHTML = '<div class="chart-loading">데이터 파싱에 실패했습니다.</div>';
       return;
     }
@@ -435,7 +427,6 @@ function renderComprehensiveAssessment(data) {
   const mainThemes = parsedData.main_themes || [];
   const insights = parsedData.insights || '';
   
-  console.log('📊 파싱된 데이터:', { mainThemes, insights });
   
   // 로딩 메시지 숨기기
   const loadingElement = assessmentContainer.querySelector('.chart-loading');
@@ -453,9 +444,13 @@ function renderComprehensiveAssessment(data) {
   const mainThemesList = document.getElementById('mainThemesList');
   if (mainThemesList) {
     if (mainThemes.length > 0) {
-      mainThemesList.innerHTML = mainThemes.slice(0, 3).map(theme => 
-        `<span class="keyword-item">${theme}</span>`
-      ).join('');
+      mainThemesList.replaceChildren();
+      mainThemes.slice(0, 3).forEach(theme => {
+        const item = document.createElement('span');
+        item.className = 'keyword-item';
+        item.textContent = theme;
+        mainThemesList.appendChild(item);
+      });
     } else {
       mainThemesList.innerHTML = '<p style="color: #999; font-style: italic;">키워드 데이터가 없습니다.</p>';
     }
@@ -465,7 +460,11 @@ function renderComprehensiveAssessment(data) {
   const insightsContainer = document.getElementById('insightsContainer');
   if (insightsContainer) {
     if (insights) {
-      insightsContainer.innerHTML = `<div class="insight-text">${insights}</div>`;
+      const text = document.createElement('div');
+      text.className = 'insight-text';
+      text.textContent = insights;
+      text.style.whiteSpace = 'pre-wrap';
+      insightsContainer.replaceChildren(text);
     } else {
       insightsContainer.innerHTML = '<p style="color: #999; font-style: italic;">인사이트 데이터가 없습니다.</p>';
     }
@@ -484,7 +483,7 @@ function bindSevenChartListenersOnce() {
   // seven day report 알림 리스너
   document.addEventListener('seven_day_report', function(event) {
     const data = event.detail;
-    console.log('📊 seven day report 알림 수신:', data);
+    console.log('📊 seven day report 알림 수신: ID', data.analysis_id);
     
     // 서버에서 데이터 가져오기
     fetchSevenDayReportData(data.analysis_id);
@@ -504,10 +503,10 @@ window.initSevenChartUI = function() {
   if (existingData) {
     try {
       const data = JSON.parse(existingData);
-      console.log('📊 기존 데이터 발견, 차트 렌더링:', data);
+      console.log('📊 기존 데이터 발견, 차트 렌더링');
       renderSevenDayCharts(data);
     } catch (error) {
-      console.error('❌ 기존 데이터 파싱 실패:', error);
+      console.error('❌ 기존 데이터 파싱 실패');
     }
   } else {
     // 기존 데이터가 없으면 로딩 상태 유지 (다른 영역들과 동일)

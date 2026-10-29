@@ -13,10 +13,12 @@ from sqlalchemy.orm import Session
 from datetime import datetime, date
 import json
 import redis
+import logging
 from app.config.settings import settings
 from sqlalchemy import func
 
 router = APIRouter(prefix="/study", tags=["study"])
+logger = logging.getLogger(__name__)
 
 # 일기 생성 스트리밍 라우터 -- sub diary generat 버튼이랑 호출출
 @router.post("/diary/generate/stream")
@@ -451,16 +453,6 @@ async def get_seven_day_report(
         ).all()
         
         
-        # weekly_data 상세 출력
-        print(f"📊 weekly_data.analysis_id: {weekly_data.analysis_id}")
-        print(f"📊 weekly_data.emotion_trend_result: {weekly_data.emotion_trend_result}")
-        print(f"📊 weekly_data.keyword_pattern_result: {weekly_data.keyword_pattern_result}")
-        print(f"📊 weekly_data.comprehensive_pattern_result: {weekly_data.comprehensive_pattern_result}")
-        
-        # diary_data 첫 번째 항목 상세 출력
-        if diary_data:
-            first_diary = diary_data[0]
-        
         # 응답 데이터 구성
         response_data = {
             "weekly_analysis": {
@@ -486,14 +478,17 @@ async def get_seven_day_report(
             ]
         }
         
-        print(f"📤 최종 응답 데이터 구성 완료:")
+        logger.info("weekly_report_read analysis_id=%s user_id=%s count=%s",
+                    analysis_id, current_user.id, len(diary_data))
         return response_data
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ 7일 리포트 데이터 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"7일 리포트 데이터 조회 실패: {str(e)}")
+        # 예외 본문에는 SQL 파라미터·개인 원문이 포함될 수 있다.
+        logger.error("weekly_report_read_failed analysis_id=%s user_id=%s error_type=%s",
+                     analysis_id, current_user.id, type(e).__name__)
+        raise HTTPException(status_code=500, detail="7일 리포트 데이터 조회에 실패했습니다.") from None
 
 
 # 차트 로딩 완료 알림

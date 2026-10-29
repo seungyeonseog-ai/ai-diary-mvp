@@ -195,7 +195,7 @@ async function loadChatHistory(date) {
     const data = await response.json();
     const messages = data.messages || [];
     
-    console.log('채팅 히스토리 로드됨:', messages);
+    console.log('채팅 히스토리 로드됨: 건수', messages.length);
     
     // 채팅 대화 내용 표시
     showChatHistory(date, messages);
@@ -235,9 +235,6 @@ function showChatHistory(date, messages) {
       
       <div class="chat-main">
         <div id="chat-box">
-          ${messages.map(msg => `
-            <div class="bubble ${msg.role}">${msg.message}</div>
-          `).join('')}
         </div>
         <div id="input-box">
           <textarea id="input-field" rows="2" placeholder="메시지를 입력하세요..."></textarea>
@@ -250,6 +247,13 @@ function showChatHistory(date, messages) {
   // 채팅 박스 스크롤을 맨 아래로
   const chatBox = chatHistoryContainer.querySelector('#chat-box');
   if (chatBox) {
+    messages.forEach(msg => {
+      const bubble = document.createElement('div');
+      const role = msg.role === 'user' ? 'user' : 'assistant';
+      bubble.className = `bubble ${role}`;
+      bubble.textContent = msg.message ?? '';
+      chatBox.appendChild(bubble);
+    });
     chatBox.scrollTop = chatBox.scrollHeight;
   }
 }
@@ -268,4 +272,4 @@ window.goBackToList = function() {
 };
 
 // 전역 함수로 등록
-window.initChatList = initChatList; 
+window.initChatList = initChatList;

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>1묶음 안전 표시 검증 — 합성 데이터</title>
+<link rel="stylesheet" href="http://127.0.0.1:8000/static/css/components/chatting/sub_chat_list.css">
+<link rel="stylesheet" href="http://127.0.0.1:8000/static/css/components/study/seven_chart.css">
+<style>
+ body {font:16px/1.6 sans-serif; margin:24px; background:#faf8f5; color:#333}
+ section {padding:16px; margin:16px 0; border:1px solid #ddd; background:white}
+ #chat-history-container {position:static; width:100%}
+ .chat-main {height:auto} #chat-box {height:auto; min-height:100px}
+ .chat-outer {max-width:800px} .message-text {white-space:pre-wrap}
+ #result {font-weight:bold; color:#146c43}
+</style>
+<h1>1묶음 안전 표시 검증</h1>
+<p>격리된 합성 데이터 · 실제 앱의 JS/CSS 사용 · AI 호출/사용자 DB 쓰기 없음</p>
+<p id="result" role="status">검증 중</p>
+<section><h2>과거 대화</h2><div class="chat-list-container"></div></section>
+<section><h2>응원 편지 — 캐시 표시</h2><div id="encourage-message" class="message-text"></div></section>
+<section><h2>응원 편지 — 타이핑</h2><div id="typing-message" class="message-text"></div></section>
+<section id="comprehensiveAssessment"><h2>주간 키워드·인사이트</h2>
+ <div class="chart-loading">로딩 중</div>
+ <div class="keyword-insights-container"><div id="mainThemesList"></div><div id="insightsContainer"></div></div>
+</section>
+<script src="http://127.0.0.1:8000/static/js/components/chatting/sub_chat_list.js?bundle1=20261029"></script>
+<script src="http://127.0.0.1:8000/static/js/components/study/encourage.js?bundle1=20261029"></script>
+<script src="http://127.0.0.1:8000/static/js/components/study/seven_chart.js?bundle1=20261029"></script>
+<script>
+// 별도 테스트 출처의 localStorage만 사용. 운영 계정·원문은 읽지 않는다.
+const attack = '<img src=x onerror="document.body.dataset.xss=\'executed\'">';
+const privateText = 'SYNTHETIC_PRIVATE_MARKER';
+const content = '오늘도 수고했어요.\n' + attack + '\n<b>이 문장도 문자로 표시</b> & 함께 😊';
+const failures = [];
+function check(ok, name) { if (!ok) failures.push(name); }
+showChatHistory('2026-10-29', [
+ {role:'user', message:'첫 줄\n' + attack},
+ {role:'assistant', message:'<b>따뜻한 답변</b> & 응원 😊'},
+ {role:'user" onclick="alert(1)', message:'역할 값도 허용된 클래스로 제한'}
+]);
+localStorage.setItem('encourage_content', content);
+localStorage.setItem('encourage_timestamp', new Date().toISOString());
+renderEncourageFromLocalStorage();
+typewriterEffect('힘내요!\n' + attack, document.getElementById('typing-message'));
+const originalLog = console.log;
+const originalError = console.error;
+const captured = [];
+console.log = (...args) => captured.push(args.join(' '));
+console.error = (...args) => captured.push(args.join(' '));
+renderComprehensiveAssessment({weekly_analysis:{keyword_patterns:{
+ main_themes:[attack, '<b>성장</b>', privateText, '4번째는 미표시'],
+ insights:'첫 줄\n' + attack + '\n' + privateText
+}}});
+// 재렌더시 누적되지 않는지, 문자열 JSON과 파싱 실패도 같은 표시 정책인지 확인.
+renderComprehensiveAssessment({weekly_analysis:{keyword_patterns:JSON.stringify({
+ main_themes:[attack, '<b>성장</b>', privateText], insights:'첫 줄\n' + attack + '\n' + privateText
+})}});
+const invalid = document.getElementById('comprehensiveAssessment').cloneNode(true);
+invalid.id = 'invalid-result';
+document.body.appendChild(invalid);
+// 실제 원문 로깅 없는지 검사. 정상 화면 보존을 위해 잘못된 JSON은 별도 요소로 전환.
+document.getElementById('comprehensiveAssessment').id = 'saved-assessment';
+invalid.id = 'comprehensiveAssessment';
+renderComprehensiveAssessment({weekly_analysis:{keyword_patterns:'invalid ' + privateText}});
+invalid.remove();
+document.getElementById('saved-assessment').id = 'comprehensiveAssessment';
+console.log = originalLog;
+console.error = originalError;
+check(!captured.join('\n').includes(privateText), '분석 원문 로그');
+check(document.querySelectorAll('#chat-box .bubble').length === 3, '과거 대화 개수');
+check(document.querySelector('#chat-box .bubble').textContent === '첫 줄\n' + attack, '과거 대화 문자');
+check(document.querySelectorAll('#mainThemesList .keyword-item').length === 3, '키워드 개수/재렌더');
+check(document.getElementById('encourage-message').textContent === content, '응원 캐시 문자');
+check(document.getElementById('insightsContainer').textContent.includes(attack), '인사이트 문자');
+function finish() {
+ if (document.getElementById('typing-message').textContent !== '힘내요!\n' + attack) {
+   setTimeout(finish, 100); return;
+ }
+ check(!document.querySelector('section img, section b, section script'), '동적 HTML 생성');
+ check(!document.body.dataset.xss, 'HTML 이벤트 실행');
+ check(getComputedStyle(document.getElementById('typing-message')).whiteSpace === 'pre-wrap', '타이핑 줄바꿈');
+ const result = document.getElementById('result');
+ result.textContent = failures.length ? 'FAIL: ' + failures.join(', ') : 'PASS: 대화·응원·키워드·인사이트 문자 표시 / HTML 이벤트 미실행 / 줄바꿈 / 원문 로그 없음';
+ result.dataset.status = failures.length ? 'fail' : 'pass';
+}
+finish();
+</script>
+</html>

@@ -1,11 +1,14 @@
 // --- 그대로 유지 ---
 function typewriterEffect(text, element) {
   if (!element) return;
-  element.innerHTML = '';
+  element.textContent = '';
+  element.style.whiteSpace = 'pre-wrap';
+  const textNode = document.createTextNode('');
+  element.appendChild(textNode);
   let i = 0;
   (function type() {
     if (i < text.length) {
-      element.innerHTML += text.charAt(i++);
+      textNode.appendData(text.charAt(i++));
       setTimeout(type, 50);
     }
   })();
@@ -17,7 +20,8 @@ function renderEncourageFromLocalStorage() {
   const timestamp = localStorage.getItem('encourage_timestamp');
 
   if (content && timestamp && messageElement) {
-    messageElement.innerHTML = content;
+    messageElement.textContent = content;
+    messageElement.style.whiteSpace = 'pre-wrap';
     messageElement.style.display = 'block';
     console.log('✅ 로컬스토리지에서 응원 메시지 렌더링 완료');
   }

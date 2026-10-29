@@ -32,7 +32,7 @@
         <div class="diary-editor-container">
             <h3>오늘의 일기를 작성해보세요</h3>
             <div class="editor-wrapper">
-                <textarea id="diary-editor" placeholder="오늘 있었던 일들을 자유롭게 적어보세요..."></textarea>
+                <textarea maxlength="50000" id="diary-editor" placeholder="오늘 있었던 일들을 자유롭게 적어보세요..."></textarea>
                 <div class="editor-actions">
                     <button id="save-diary-btn" class="action-btn primary"> 저장하기</button>
                 </div>
@@ -57,7 +57,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- AI 생성 일기 컨테이너 -->
                     <div class="diary-container-box">
                         <div class="container-header">
@@ -72,7 +72,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- 일기 상세보기 화면 -->
         <div id="diary-detail-view" class="diary-detail-view hidden">
             <div class="diary-detail-header">
@@ -91,4 +91,4 @@
             </div>
         </div>
     </div>
-</div> 
+</div>

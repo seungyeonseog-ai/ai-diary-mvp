@@ -12,18 +12,18 @@ window.initDiaryGeneration = initDiaryGeneration;
 function setupTabNavigation() {
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
-    
+
     tabButtons.forEach(button => {
         button.addEventListener('click', () => {
             const targetTab = button.getAttribute('data-tab');
-            
+
             // 활성 탭 변경
             tabButtons.forEach(btn => btn.classList.remove('active'));
             tabContents.forEach(content => content.classList.remove('active'));
-            
+
             button.classList.add('active');
             document.getElementById(`${targetTab}-tab`).classList.add('active');
-            
+
             // 일기 목록 탭이 활성화되면 자동으로 로드
             if (targetTab === 'list') {
                 loadDiaryList();
@@ -35,24 +35,24 @@ function setupTabNavigation() {
 // 이벤트 리스너 설정
 function setupEventListeners() {
     console.log('🔧 이벤트 리스너 설정 시작');
-    
+
     // 직접 작성 저장 버튼
     const saveDiaryBtn = document.getElementById('save-diary-btn');
     if (saveDiaryBtn) {
         saveDiaryBtn.addEventListener('click', saveManualDiary);
         console.log('✅ 저장 버튼 이벤트 리스너 등록됨');
     }
-    
+
     // AI 생성 버튼 - 무조건 서버 호출
     const generateDiaryBtn = document.getElementById('generate-diary-btn');
     console.log('🔍 AI 생성 버튼 찾기:', generateDiaryBtn);
-    
+
     if (generateDiaryBtn) {
         console.log('✅ AI 생성 버튼 이벤트 리스너 등록 시작');
-        
+
         generateDiaryBtn.addEventListener('click', function(e) {
             console.log('🖱️ AI 생성 버튼 클릭됨!');
-            
+
             // 무조건 서버 호출
             fetch('/study/diary/generate/stream', {
                 method: 'POST',
@@ -64,7 +64,7 @@ function setupEventListeners() {
                 if (!response.ok) {
                     return response.json().then(errorData => {
                         const errorMessage = errorData.detail;
-                        
+
                         // 서버에서 오는 detail 메시지를 그대로 popup으로 표시
                         if (window.popupManager) {
                             window.popupManager.show(errorMessage, "알림");
@@ -85,19 +85,19 @@ function setupEventListeners() {
                 }
             });
         });
-        
+
         console.log('✅ AI 생성 버튼 이벤트 리스너 등록 완료');
     } else {
         console.error('❌ AI 생성 버튼을 찾을 수 없습니다!');
     }
-    
+
     // AI 생성 결과 저장 버튼 제거 (AI 생성 시 자동 저장됨)
     // const saveGeneratedBtn = document.getElementById('save-generated-btn');
     // if (saveGeneratedBtn) {
     //     saveGeneratedBtn.addEventListener('click', saveGeneratedDiary);
     //     console.log('✅ AI 생성 결과 저장 버튼 이벤트 리스너 등록됨');
     // }
-    
+
     console.log('🔧 이벤트 리스너 설정 완료');
 }
 
@@ -106,12 +106,12 @@ async function handleStreamingResponse(response) {
     const indicator = document.getElementById('generation-indicator');
     const generatedText = document.getElementById('ai-generated-text');
     const generateBtn = document.getElementById('generate-diary-btn');
-    
+
     // UI 상태 변경
     generateBtn.disabled = true;
     indicator.classList.remove('hidden');
     generatedText.textContent = '';
-    
+
     try {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -134,12 +134,12 @@ async function handleStreamingResponse(response) {
                 generatedText.scrollTop = generatedText.scrollHeight;
             }
         }
-        
+
         while (true) {
             const { done, value } = await reader.read();
-            
+
             if (done) break;
-            
+
             pending += decoder.decode(value, { stream: true });
             let boundary;
             while ((boundary = pending.indexOf('\n\n')) !== -1) {
@@ -151,14 +151,14 @@ async function handleStreamingResponse(response) {
         pending += decoder.decode();
         if (pending.trim()) handleEvent(pending);
         if (!saved) throw new Error('저장 완료를 확인하지 못했습니다. 일기 목록을 확인해 주세요.');
-        
+
         // 생성 완료 후 성공 메시지 표시
         if (window.popupManager) {
             window.popupManager.show('AI 일기 생성이 완료되었습니다!', "알림");
         } else {
             alert('AI 일기 생성이 완료되었습니다!');
         }
-        
+
     } catch (error) {
         console.error('스트리밍 처리 오류:', error);
         if (window.popupManager) {
@@ -174,10 +174,12 @@ async function handleStreamingResponse(response) {
 }
 
 // 직접 작성 일기 저장
+let manualDiarySaving = false;
 async function saveManualDiary() {
+    if (manualDiarySaving) return;
     const editor = document.getElementById('diary-editor');
     const content = editor.value.trim();
-    
+
     if (!content) {
         if (window.popupManager) {
             window.popupManager.show('일기 내용을 입력해주세요.', "알림");
@@ -186,20 +188,28 @@ async function saveManualDiary() {
         }
         return;
     }
-    
+
+    if (content.length > 50000) {
+        alert('일기는 50,000자 이내로 작성해주세요.');
+        return;
+    }
+    manualDiarySaving = true;
+    const saveButton = document.getElementById('save-diary-btn');
+    if (saveButton) saveButton.disabled = true;
+    const token = localStorage.getItem('access_token');
     try {
         const response = await fetch('/study/user/diary/save', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-                content: content,
-                source_type: 'manual'
+                content: content
             })
         });
-        
+
+        if (localStorage.getItem('access_token') !== token || document.getElementById('diary-editor') !== editor) return;
         if (response.ok) {
             if (window.popupManager) {
                 window.popupManager.show('일기가 저장되었습니다!', "알림");
@@ -210,8 +220,8 @@ async function saveManualDiary() {
             loadDiaryList(); // 목록 새로고침
         } else {
             const errorData = await response.json();
-            const errorMessage = errorData.detail || '일기 저장에 실패했습니다.';
-            
+            const errorMessage = typeof errorData.detail === 'string' ? errorData.detail : '일기 내용은 비어 있지 않은 50,000자 이내의 글이어야 합니다.';
+
             // 서버에서 오는 detail 메시지를 그대로 popup으로 표시
             if (window.popupManager) {
                 window.popupManager.show(errorMessage, "알림");
@@ -220,12 +230,15 @@ async function saveManualDiary() {
             }
         }
     } catch (error) {
-        console.error('일기 저장 오류:', error);
+        if (localStorage.getItem('access_token') !== token || document.getElementById('diary-editor') !== editor) return;
         if (window.popupManager) {
             window.popupManager.show('일기 저장 중 오류가 발생했습니다.', "알림");
         } else {
             alert('일기 저장 중 오류가 발생했습니다.');
         }
+    } finally {
+        manualDiarySaving = false;
+        if (saveButton) saveButton.disabled = false;
     }
 }
 
@@ -238,14 +251,14 @@ async function saveManualDiary() {
 async function loadDiaryList() {
     const userDiaryList = document.getElementById('user-diary-list');
     const aiDiaryList = document.getElementById('ai-diary-list');
-    
+
     try {
         const response = await fetch('/study/diary/list', {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('access_token')}`
             }
         });
-        
+
         if (response.ok) {
             const diaries = await response.json();
             renderDiaryList(diaries);
@@ -264,17 +277,17 @@ async function loadDiaryList() {
 function renderDiaryList(diaries) {
     const userDiaryList = document.getElementById('user-diary-list');
     const aiDiaryList = document.getElementById('ai-diary-list');
-    
+
     if (!diaries || diaries.length === 0) {
         userDiaryList.innerHTML = '<p class="no-diaries">아직 작성한 일기가 없습니다.</p>';
         aiDiaryList.innerHTML = '<p class="no-diaries">아직 작성한 일기가 없습니다.</p>';
         return;
     }
-    
+
     // source_type에 따라 분리
     const userDiaries = diaries.filter(diary => diary.source_type === 'user');
     const aiDiaries = diaries.filter(diary => diary.source_type === 'ai');
-    
+
     // 사용자 일기 렌더링
     if (userDiaries.length === 0) {
         userDiaryList.innerHTML = '<p class="no-diaries">직접 작성한 일기가 없습니다.</p>';
@@ -289,7 +302,7 @@ function renderDiaryList(diaries) {
         }).join('');
         userDiaryList.innerHTML = userDiaryHTML;
     }
-    
+
     // AI 일기 렌더링
     if (aiDiaries.length === 0) {
         aiDiaryList.innerHTML = '<p class="no-diaries">AI 생성한 일기가 없습니다.</p>';
@@ -304,7 +317,7 @@ function renderDiaryList(diaries) {
         }).join('');
         aiDiaryList.innerHTML = aiDiaryHTML;
     }
-    
+
     // 일기 아이템 클릭 이벤트 추가
     setupDiaryItemClickEvents();
 }
@@ -312,7 +325,7 @@ function renderDiaryList(diaries) {
 // 일기 아이템 클릭 이벤트 설정
 function setupDiaryItemClickEvents() {
     const diaryItems = document.querySelectorAll('.diary-item');
-    
+
     diaryItems.forEach(item => {
         item.addEventListener('click', () => {
             const diaryId = item.getAttribute('data-diary-id');
@@ -329,7 +342,7 @@ async function showDiaryDetail(diaryId) {
                 'Authorization': `Bearer ${localStorage.getItem('access_token')}`
             }
         });
-        
+
         if (response.ok) {
             const diary = await response.json();
             displayDiaryDetail(diary);
@@ -357,24 +370,24 @@ function displayDiaryDetail(diary) {
     const dateElement = document.getElementById('diary-detail-date');
     const timeElement = document.getElementById('diary-detail-time');
     const textElement = document.getElementById('diary-detail-text');
-    
+
     // 날짜 표시
     const date = new Date(diary.timestamp);
     dateElement.textContent = date.toLocaleDateString('ko-KR');
-    
+
     // 시간 표시
     timeElement.textContent = date.toLocaleTimeString('ko-KR', {
         hour: '2-digit',
         minute: '2-digit'
     });
-    
+
     // 내용 표시
     textElement.textContent = diary.content;
-    
+
     // 화면 전환
     listView.classList.add('hidden');
     detailView.classList.remove('hidden');
-    
+
     // 뒤로가기 버튼 이벤트
     document.getElementById('diary-back-btn').addEventListener('click', goBackToList);
 }
@@ -383,7 +396,7 @@ function displayDiaryDetail(diary) {
 function goBackToList() {
     const listView = document.getElementById('diary-list-view');
     const detailView = document.getElementById('diary-detail-view');
-    
+
     detailView.classList.add('hidden');
     listView.classList.remove('hidden');
 }
@@ -396,22 +409,22 @@ window.initDiaryGeneration = initDiaryGeneration;
 // // AI 탭 활성화 + 자동 생성 함수 (전역으로 노출)
 // function activateAITabAndGenerate() {
 //     console.log('🤖 AI 탭 활성화 + 자동 생성 시작');
-    
+
 //     // 1. AI 탭 활성화
 //     const tabButtons = document.querySelectorAll('.tab-button');
 //     const tabContents = document.querySelectorAll('.tab-content');
-    
+
 //     tabButtons.forEach(btn => btn.classList.remove('active'));
 //     tabContents.forEach(content => content.classList.remove('active'));
-    
+
 //     const aiTabButton = document.querySelector('[data-tab="ai"]');
 //     const aiTabContent = document.getElementById('ai-tab');
-    
+
 //     if (aiTabButton && aiTabContent) {
 //         aiTabButton.classList.add('active');
 //         aiTabContent.classList.add('active');
 //         console.log('✅ AI 탭 활성화 완료');
-        
+
 //         // 2. 잠시 후 AI 생성 버튼 클릭 (DOM 업데이트 대기)
 //         setTimeout(() => {
 //             const generateDiaryBtn = document.getElementById('generate-diary-btn');
@@ -448,5 +461,4 @@ function activateAITabAndGenerate() {
 
 
 // 전역으로 노출
-window.activateAITabAndGenerate = activateAITabAndGenerate; 
-
+window.activateAITabAndGenerate = activateAITabAndGenerate;

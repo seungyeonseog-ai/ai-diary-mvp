@@ -39,20 +39,16 @@ async def stream_gpt_response(messages: list):
             stream=True
         )
         for chunk in response:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-    except Exception as e:
-        error_msg = str(e)
-        if "401" in error_msg:
-            yield "❌ API 키 인증 실패. 관리자에게 문의하세요."
-        elif "429" in error_msg:
-            yield "❌ 서비스 일시적 과부하. 잠시 후 다시 시도하세요."
-        else:
-            yield "❌ GPT 응답 중 오류 발생"
-        print("❌ GPT 스트리밍 실패:", error_msg)
-
-
-
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            if choice.delta.content:
+                yield choice.delta.content
+            if choice.finish_reason and choice.finish_reason != "stop":
+                raise RuntimeError("AI chat response incomplete")
+    except Exception:
+        # 오류 문구를 정상 답변 청크로 전달하면 DB에 저장될 수 있다.
+        raise RuntimeError("AI chat streaming failed") from None
 
 
 # 클래스 버전 (일기 생성용)

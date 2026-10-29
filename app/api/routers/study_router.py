@@ -5,7 +5,8 @@ from app.api.dependencies.auth_dependencies import get_current_user
 from app.services.diary_service import DiaryService
 from app.services.encourage_diary_service import EncourageDiaryService
 from app.repositories.today_chat_message_repository import TodayChatMessageRepository
-from app.models.schemas.study_schema import DiaryResponse
+from app.models.schemas.study_schema import DiaryResponse, ManualDiaryInput
+from app.services.manual_diary_service import save_manual_diary, ManualDiaryAlreadyExists
 from app.models.db.user_model import User
 from app.models.db.study_model import DiaryReport, EncouragementReport, WeeklyAnalysisReport, DiaryAnalysisReport
 from app.core.connection import get_db
@@ -32,24 +33,24 @@ async def generate_diary_stream(
     try:
         # Repository 직접 호출
         chat_repository = TodayChatMessageRepository()
-        
+
         # 오늘 AI 생성 여부 확인 (source_type='ai')
         today_ai_diary = chat_repository.check_today_diary_by_source(current_user.id, 'ai')
         if today_ai_diary:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="오늘 이미 AI로 생성한 일기가 있습니다."
             )
-        
+
         # 오늘 사용자 채팅 토큰수 확인
         formatted_chats, total_tokens = chat_repository.diary_get_today_user_chat_and_tokens(current_user.id)
         min_tokens = 55  # 최소 토큰수 설정
         if total_tokens < min_tokens:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"일기 생성하기엔 오늘의 채팅수가 부족합니다"
             )
-        
+
         return StreamingResponse(
             diary_service.generate_diary_stream(current_user.id),
             media_type="text/event-stream",
@@ -69,24 +70,24 @@ async def generate_diary_stream(
 #     try:
 #         # Repository 직접 호출
 #         chat_repository = TodayChatMessageRepository()
-        
+
 #         # 오늘 AI 생성 여부 확인 (source_type='ai')
 #         today_ai_diary = chat_repository.check_today_diary_by_source(current_user.id, 'ai')
 #         if today_ai_diary:
 #             raise HTTPException(
-#                 status_code=400, 
+#                 status_code=400,
 #                 detail="오늘 이미 AI로 생성한 일기가 있습니다."
 #             )
-        
+
 #         # 오늘 사용자 채팅 토큰 수 확인
 #         combined_content, total_tokens = chat_repository.get_today_user_chat_content_and_tokens(current_user.id)
 #         min_tokens = 55  # 최소 토큰 수 설정
 #         if total_tokens < min_tokens:
 #             raise HTTPException(
-#                 status_code=400, 
+#                 status_code=400,
 #                 detail=f"일기 생성하기엔 오늘의 채팅 토큰이 부족합니다 (현재: {total_tokens}개, 필요: {min_tokens}개)"
 #             )
-        
+
 #         return StreamingResponse(
 #             diary_service.generate_diary_stream(current_user.id),
 #             media_type="text/plain"
@@ -118,47 +119,19 @@ async def generate_diary_stream(
 
 # 사용자 직접 일기 저장 라우터
 @router.post("/user/diary/save")
-async def save_user_diary(
-    diary_data: dict,
-    current_user: User = Depends(get_current_user)
+def save_user_diary(
+    diary_data: ManualDiaryInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     try:
-        # Repository 직접 호출
-        chat_repository = TodayChatMessageRepository()
-        
-        # 오늘 사용자 직접 작성 여부 확인 (source_type='user')
-        today_user_diary = chat_repository.check_today_diary_by_source(current_user.id, 'user')
-        if today_user_diary:
-            raise HTTPException(
-                status_code=400, 
-                detail="오늘 이미 직접 작성한 일기가 있습니다."
-            )
-        
-        # DB에 직접 저장
-        db = next(get_db())
-        try:
-            diary_report = DiaryReport(
-                user_id=current_user.id,
-                content=diary_data.get('content'),
-                source_type='user',  # 사용자 직접 작성은 항상 'user'
-                timestamp=get_kst_now()  # 시스템 로컬 시간 사용 (KST)
-            )
-            db.add(diary_report)
-            db.commit()
-            
-            return {"message": "일기가 성공적으로 저장되었습니다."}
-            
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(status_code=500, detail=f"일기 저장 실패: {str(e)}")
-        finally:
-            db.close()
-            
-    except HTTPException:
-        # HTTPException은 그대로 전달
-        raise
+        row = save_manual_diary(db.get_bind(), current_user.id, diary_data.content)
+        return {"message": "일기가 성공적으로 저장되었습니다.", "diary_id": row.diary_id}
+    except ManualDiaryAlreadyExists:
+        raise HTTPException(status_code=409, detail="오늘 이미 직접 작성한 일기가 있습니다.")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"일기 저장 실패: {str(e)}")
+        logger.error("manual_diary_save_failed error_type=%s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="일기를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.")
 
 
 # 일기 생성 조건 체크 라우터
@@ -169,7 +142,7 @@ async def check_diary_condition(
     try:
         # Repository 직접 호출
         chat_repository = TodayChatMessageRepository()
-        
+
         # 오늘 AI 생성 여부 확인 (source_type='ai')
         today_ai_diary = chat_repository.check_today_diary_by_source(current_user.id, 'ai')
         if today_ai_diary:
@@ -177,7 +150,7 @@ async def check_diary_condition(
                 "available": False,
                 "reason": "오늘 이미 AI로 생성한 일기가 있습니다."
             }
-        
+
         # 오늘 사용자 채팅 토큰수 확인
         formatted_chats, total_tokens = chat_repository.diary_get_today_user_chat_and_tokens(current_user.id)
         min_tokens = 55  # 최소 토큰수 설정
@@ -186,12 +159,12 @@ async def check_diary_condition(
                 "available": False,
                 "reason": f"일기 생성하기엔 오늘의 채팅수가 부족합니다."
             }
-        
+
         return {
             "available": True,
             "reason": "일기 생성이 가능합니다."
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"조건 확인 실패: {str(e)}")
 
@@ -204,7 +177,7 @@ async def check_diary_condition(
 #     try:
 #         # Repository 직접 호출
 #         chat_repository = TodayChatMessageRepository()
-        
+
 #         # 오늘 AI 생성 여부 확인 (source_type='ai')
 #         today_ai_diary = chat_repository.check_today_diary_by_source(current_user.id, 'ai')
 #         if today_ai_diary:
@@ -212,7 +185,7 @@ async def check_diary_condition(
 #                 "available": False,
 #                 "reason": "오늘 이미 AI로 생성한 일기가 있습니다."
 #             }
-        
+
 #         # 오늘 사용자 채팅 토큰 수 확인
 #         combined_content, total_tokens = chat_repository.get_today_user_chat_content_and_tokens(current_user.id)
 #         min_tokens = 55  # 최소 토큰 수 설정
@@ -221,15 +194,15 @@ async def check_diary_condition(
 #                 "available": False,
 #                 "reason": f"일기 생성하기엔 오늘의 채팅 토큰이 부족합니다. (현재: {total_tokens}개, 필요: {min_tokens}개)"
 #             }
-        
+
 #         return {
 #             "available": True,
 #             "reason": "일기 생성이 가능합니다."
 #         }
-        
+
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=f"조건 확인 실패: {str(e)}")
-    
+
 
 
 
@@ -241,10 +214,10 @@ async def get_diary_list(
     try:
         # Repository 직접 호출
         chat_repository = TodayChatMessageRepository()
-        
+
         # 사용자의 모든 일기 조회 (최신순)
         diaries = chat_repository.get_user_diaries(current_user.id)
-        
+
         # JS에서 기대하는 형태로 변환
         diary_list = []
         for diary in diaries:
@@ -255,9 +228,9 @@ async def get_diary_list(
                 "timestamp": diary.timestamp.isoformat() if diary.timestamp else None,
                 "user_id": diary.user_id
             })
-        
+
         return diary_list
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"일기 목록 조회 실패: {str(e)}")
 
@@ -270,16 +243,16 @@ async def get_diary_detail(
     try:
         # Repository 직접 호출
         chat_repository = TodayChatMessageRepository()
-        
+
         # 특정 일기 조회 (사용자 본인의 일기만)
         diary = chat_repository.get_diary_by_id(diary_id, current_user.id)
-        
+
         if not diary:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="일기를 찾을 수 없습니다."
             )
-        
+
         # JS에서 기대하는 형태로 변환
         return {
             "id": diary.diary_id,
@@ -288,7 +261,7 @@ async def get_diary_detail(
             "timestamp": diary.timestamp.isoformat() if diary.timestamp else None,
             "user_id": diary.user_id
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -369,22 +342,22 @@ async def get_seven_day_report(
 ):
     try:
         print(f"📊 7일 리포트 데이터 조회 시작: analysis_id={analysis_id}, user_id={current_user.id}")
-        
+
         # weekly_analysis_report 테이블에서 데이터 조회
         weekly_data = db.query(WeeklyAnalysisReport).filter(
             WeeklyAnalysisReport.analysis_id == analysis_id,
             WeeklyAnalysisReport.user_id == current_user.id
         ).first()
-        
+
         if not weekly_data:
             raise HTTPException(status_code=404, detail="7일 리포트 데이터를 찾을 수 없습니다.")
-        
+
         print(f"🔍 weekly_data 조회 성공: week_start_date={weekly_data.week_start_date}, week_end_date={weekly_data.week_end_date}")
-        
+
         # 분석 당시 실제 입력만 반환한다. 과거 결과는 모호하지 않은 날짜 집합과 호환한다.
         diary_data = WeeklyAnalysisRepository(db).get_analysis_sources(weekly_data)
-        
-        
+
+
         # 응답 데이터 구성
         response_data = {
             "weekly_analysis": {
@@ -409,11 +382,11 @@ async def get_seven_day_report(
                 for diary in diary_data
             ]
         }
-        
+
         logger.info("weekly_report_read analysis_id=%s user_id=%s count=%s",
                     analysis_id, current_user.id, len(diary_data))
         return response_data
-        
+
     except HTTPException:
         raise
     except SourceResolutionError:
@@ -434,14 +407,14 @@ async def chart_loading_complete(
     current_user: User = Depends(get_current_user)
 ):
     try:
-        
+
         # Redis에 구독 발행 (study/section.js가 받을 알림)
         redis_client = redis.Redis(
             host=settings.redis_host,
             port=settings.redis_port,
             db=settings.redis_db
         )
-        
+
         message = {
             "type": "chart_loading_complete",
             "target": "study-section",
@@ -450,15 +423,15 @@ async def chart_loading_complete(
             "week_start_date": data.get("week_start_date"),
             "week_end_date": data.get("week_end_date")
         }
-        
+
         channel = f"user_{current_user.id}_chart"
         message_json = json.dumps(message)
-        
+
         print(f"📤 Redis 발행: channel={channel}, message={message_json}")
         result = redis_client.publish(channel, message_json)
-        
+
         return {"status": "success", "message": "차트 로딩 완료 알림이 전송되었습니다."}
-        
+
     except Exception as e:
         print(f"❌ 차트 로딩 완료 알림 전송 실패: {str(e)}")
         raise HTTPException(status_code=500, detail=f"차트 로딩 완료 알림 전송 실패: {str(e)}")

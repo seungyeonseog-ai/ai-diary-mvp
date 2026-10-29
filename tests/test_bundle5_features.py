@@ -76,6 +76,11 @@ class FeatureTests(unittest.TestCase):
         exec(compile(ast.fix_missing_locations(ast.Module(body=[ast.ClassDef(name='Flow',bases=[],keywords=[],body=methods,decorator_list=[])],type_ignores=[])),'flow','exec'),env)
         self.assertEqual(env['Flow']().run(1,1)['reason'],'feature_disabled')
         env['SimilarPatternService'].assert_not_called();env['get_db'].assert_not_called()
+    def test_direct_similar_search_disabled_without_model_or_db(self):
+        from app.services import similar_pattern_service as search
+        with patch.object(search,'VectorDBService') as vector, patch.object(search,'get_db') as db:
+            self.assertEqual(search.SimilarPatternService().find_similar_excluding_used_dates(user_id=1,analysis_id=1,query='synthetic'),[])
+            vector.assert_not_called();db.assert_not_called()
     def test_read_api_disabled_still_requires_authentication(self):
         app=FastAPI();app.include_router(constellation.router)
         app.dependency_overrides[get_db]=lambda:self.db

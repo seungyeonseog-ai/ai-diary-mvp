@@ -13,28 +13,38 @@ logger = logging.getLogger(__name__)
 class GPTSessionSummaryService:
     def __init__(self):
         self.chat_repo = TodayChatMessageRepository()
-    
+
     def create_session_summary(self, user_id: int, session_id: str):
         """GPT를 사용하여 세션 요약 생성 및 DB 저장 (임베딩 트리거 제거됨)"""
         try:
             logger.info(f"▶ GPT 세션 요약 시작: user_id={user_id}, session_id={session_id}")
-            
+
             # 1) 세션의 user 채팅 가져오기
             user_chats = self.chat_repo.today_session_user_chats_formatted(user_id, session_id)
             if not user_chats:
                 logger.warning(f"⚠️ 세션에 user 채팅이 없음: user_id={user_id}, session_id={session_id}")
                 return None
-            
+
             # 2) 프롬프트 구성
             prompt = build_session_summary_prompt(user_chats)
-            
+
             # 3) GPT 호출
             logger.info(f"🤖 GPT API 호출 중: user_id={user_id}, session_id={session_id}")
             response = call_gpt(prompt)
-            
+
             # 4) JSON 파싱
             try:
                 result = json.loads(response)
+                if not isinstance(result, dict):
+                    return None
+                if not isinstance(result.get("summary"), str) or not result["summary"].strip():
+                    return None
+                if not isinstance(result.get("key_sentence", ""), str):
+                    return None
+                if not isinstance(result.get("keywords", []), list) or any(
+                    not isinstance(item, str) or not item.strip() for item in result.get("keywords", [])
+                ):
+                    return None
                 summary = result.get("summary", "")
                 key_sentence = result.get("key_sentence", "")
                 keywords = result.get("keywords", [])
@@ -42,7 +52,7 @@ class GPTSessionSummaryService:
             except json.JSONDecodeError as e:
                 logger.error("세션 요약 JSON 파싱 실패")
                 return None
-            
+
             # 5) DB 저장
             db = next(get_db())
             try:
@@ -50,7 +60,7 @@ class GPTSessionSummaryService:
                     GPTSessionSummary.user_id == user_id,
                     GPTSessionSummary.session_id == session_id
                 ).first()
-                
+
                 if existing:
                     logger.info(f"ℹ️ 기존 요약본 업데이트: user_id={user_id}, session_id={session_id}")
                     existing.summary = summary
@@ -66,7 +76,7 @@ class GPTSessionSummaryService:
                         keywords=keywords_json
                     )
                     db.add(new_summary)
-                
+
                 db.commit()
                 logger.info(f"✅ DB 저장 완료: user_id={user_id}, session_id={session_id}")
 
@@ -86,10 +96,10 @@ class GPTSessionSummaryService:
                 }
             except Exception as e:
                 db.rollback()
-                logger.error(f"❌ DB 저장 실패: {e}")
+                logger.error("summary_save_failed error_type=%s", type(e).__name__)
                 raise
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"❌ GPT 세션 요약 실패: user_id={user_id}, session_id={session_id}, error={e}")
+            logger.error("summary_failed user_id=%s error_type=%s", user_id, type(e).__name__)
             raise

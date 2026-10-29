@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 @celery.task(bind=True, autoretry_for=(Exception,), max_retries=5, retry_backoff=True)
 def session_embed_task(self, user_id: int, session_id: str):
     # session_embed_task.apply_async(args=[user_id, session_id])
-    
+
     """
     세션 임베딩 태스크:
       1) 시작 시점 기록 + Redis in-progress SADD
@@ -182,23 +182,26 @@ def session_summarize_task(self, user_id: int, session_id: str):
         # 🔥 모델 로딩 순서 보장 - 외래키 의존성을 위해
         from app.models.db.session_log import SessionLog
         from app.models.db.session_summary import GPTSessionSummary
-        
+
         from app.services.gpt_session_summary_service import GPTSessionSummaryService
         service = GPTSessionSummaryService()
-        service.create_session_summary(user_id, session_id)
+        result = service.create_session_summary(user_id, session_id)
+        if not isinstance(result, dict) or not isinstance(result.get("summary"), str) or not result["summary"].strip():
+            logger.warning("session_summary_not_saved user_id=%s", user_id)
+            return {"status": "not_summarized"}
         logger.info(f"✅ session_summarize_task 완료: user_id={user_id}, session_id={session_id}")
-        
+
         # 요약 완료 후 임베딩 태스크 호출
         session_embed_task.delay(user_id=user_id, session_id=session_id)
-        
+
     except Exception as exc:
-        logger.exception(f"❌ session_summarize_task 실패, 재시도 준비 중: user_id={user_id}, session_id={session_id}")
+        logger.error("session_summary_task_failed user_id=%s error_type=%s", user_id, type(exc).__name__)
         raise self.retry(exc=exc)
 
 
 
 
-        
+
 
 # 3) 일기 생성 조건 체크 Task
 @celery.task
@@ -221,7 +224,7 @@ def check_diary_conditions_periodic():
                 # 2. 오늘 AI 생성 여부 확인 (source_type='ai')
                 today_ai_diary = chat_repo.check_today_diary_by_source(user.id, 'ai')
 
-            
+
                 # AI 생성 조건 체크
                 # 1. 오늘 사용자 채팅 토큰이 55개 이상
                 # 2. 아직 오늘 AI로 일기를 생성하지 않았는지 확인
@@ -231,21 +234,21 @@ def check_diary_conditions_periodic():
                         "type": "diary_available",
                         "user_id": user.id,
                         "message": "오늘의 일기를 생성할 수 있습니다!"
-                      
+
                     }
-                    
+
                     channel = f"user_{user.id}_diary"
                     message_json = json.dumps(message)
-                    
+
                     print(f"📤 Redis 발행 시도: channel={channel}, message={message_json}")
-                    
+
                     try:
                         result = redis_client.publish(channel, message_json)
                         logger.info(f"✅ 일기 생성 알림 발행: user_id={user.id}, 토큰수={total_tokens}")
                     except Exception as e:
                         print(f"❌ Redis 발행 실패: {e}")
                         logger.error(f"❌ Redis 발행 실패: user_id={user.id}, error={e}")
-                        
+
                 else:
                     if today_ai_diary:
                         logger.info(f"ℹ️ 이미 오늘 AI 일기 생성됨: user_id={user.id}")
@@ -340,11 +343,11 @@ def daily_reset_notifications():
                     "message": "새로운 하루가 시작되었습니다!",
                     "priority": "high"
                 }
-                
+
                 message_json = json.dumps(reset_message)
                 result = redis_client.publish(channel, message_json)
-                
-                
+
+
             except Exception as e:
                 logger.error(f"❌ 사용자 {user.id} 알림 리셋 실패: {e}")
 
@@ -398,7 +401,7 @@ def check_encouragement_conditions_periodic():
                 logger.info(f"✅ 격려 메시지 생성 조건 만족: user_id={user.id}, tokens={total_tokens}")
                 service = EncourageDiaryService(db)
                 result = service.create_encouragement(user.id)
-                
+
                 if result:
                     logger.info(f"✅ 격려 메시지 생성 완료: user_id={user.id}")
                 else:
@@ -421,12 +424,12 @@ def check_weekly_analysis_conditions_periodic():
     try:
         db = next(get_db())
         weekly_repo = WeeklyAnalysisRepository(db)
-        
+
         # 1. 7일치 미사용 리포트가 있는 사용자들 조회
         user_ids = [user.id for user in weekly_repo.get_users_with_unused_reports(7)]
         db.rollback()  # 대상 조회의 읽기 트랜잭션을 AI 호출 전에 끝낸다.
         from app.tasks.diary_analysis_event import run_weekly_analysis_and_notify
-        
+
         for user_id in user_ids:
             try:
                 run_weekly_analysis_and_notify(db, user_id, redis_client.publish)

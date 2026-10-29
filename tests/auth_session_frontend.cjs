@@ -24,7 +24,7 @@ function makeContext(responses) {
   };
   const context = vm.createContext({window, URL, TextDecoder, Date,
     localStorage: {getItem: key => storage.get(key) || null, removeItem: key => {removed.push(key); storage.delete(key);}},
-    document: {addEventListener: (name, callback) => {listeners[name] = callback;},
+    document: {querySelector: () => null, addEventListener: (name, callback) => {listeners[name] = callback;},
       getElementById: id => id === 'input-field' ? input : box,
       createElement: () => ({style: {}})},
     alert: window.alert,

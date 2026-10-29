@@ -7,7 +7,7 @@ import logging
 from app.services.chat_service import save_user_message, save_gpt_response
 from app.prompt.chat_prompt import build_chat_prompt
 from app.models.schemas.chat_schema import MessageInput
-from app.models.schemas.chat_schema import TurnInput
+from app.models.schemas.chat_schema import TurnInput, ChatResponseInput
 from fastapi import HTTPException
 from app.clients.gpt_api import stream_gpt_response
 from fastapi.responses import StreamingResponse
@@ -52,49 +52,50 @@ def send_message(
             "session_id": session_id
         }
     except Exception as e:
-        print("❌ /chat/send 에러:", str(e))
+        print("❌ /chat/send 에러:", type(e).__name__)
         raise HTTPException(status_code=500, detail="채팅 메시지 저장 실패")
 
 
 
-# GPT 스트리밍 응답 생성 & 저장 
+# GPT 스트리밍 응답 생성 & 저장
 
 logger = logging.getLogger(__name__)
 
 @router.post("/chat/response_stream")
 async def stream_response(
-    request: Request,
+    data: ChatResponseInput,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     try:
-        # 요청 바디 파싱
-        body = await request.json()
-        turn = body.get("turn")
-        session_id = body.get("session_id")  # 프론트에서 넘어오는 세션 ID
-
-        logger.info(
-            f"✅ /chat/response_stream start - user_id={current_user.id}, turn={turn}, session_id={session_id}"
-        )
+        turn, session_id = data.turn, data.session_id
+        # 요청한 turn이 실제 본인의 사용자 메시지인지 먼저 확인한다.
+        source = db.query(ChatMessage).filter_by(
+            user_id=current_user.id, session_id=session_id, turn=turn, role="user"
+        ).first()
+        if source is None:
+            raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
 
         # 프롬프트 구성
         prompt = build_chat_prompt(db, current_user.id, turn, session_id=session_id)
 
         async def event_generator():
             accumulated = ""
+            def frame(event, payload):
+                return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
             try:
                 # 스트리밍 청크 전송
                 async for chunk in stream_gpt_response(prompt):
                     accumulated += chunk
-                    yield chunk
+                    yield frame("chunk", {"text": chunk})
 
             except Exception as stream_err:
-                # 스트리밍 중 오류 발생
-                logger.error(
-                    f"❌ Error during streaming: {stream_err}", exc_info=True
-                )
-                # 클라이언트에 오류 알림
-                yield "[Error] GPT 스트리밍 중 오류가 발생했습니다."
+                logger.error("chat_stream_failed error_type=%s", type(stream_err).__name__)
+                yield frame("error", {"code": "generation_failed", "message": "답변 생성에 실패했습니다. 잠시 후 다시 시도해 주세요."})
+                return
+
+            if not accumulated.strip():
+                yield frame("error", {"code": "generation_failed", "message": "답변이 비어 있어 저장하지 않았습니다."})
                 return
 
             # 스트리밍 완료 시 저장
@@ -105,25 +106,26 @@ async def stream_response(
                 save_gpt_response(
                     db, current_user.id, accumulated, turn, session_id=session_id
                 )
-                
+
             except Exception as save_err:
-                logger.error(
-                    f"❌ Error saving GPT response: {save_err}", exc_info=True
-                )
+                logger.error("chat_save_failed error_type=%s", type(save_err).__name__)
+                yield frame("error", {"code": "save_failed", "message": "답변은 생성됐지만 저장하지 못했습니다. 대화 기록을 다시 확인해 주세요."})
                 return
+
+            yield frame("saved", {"turn": turn, "session_id": session_id})
 
             # 조건 체크 및 Redis 발행 (try 블록 밖으로)
             logger.info("🔍 save_gpt_response 완료, 조건 체크 시작")
-            
+
             try:
                 logger.info("🔍 DiaryService 생성 시작")
                 diary_service = DiaryService()
                 logger.info("✅ DiaryService 생성 완료")
-                
+
                 logger.info("🔍 조건 체크 함수 호출 시작")
                 condition_result = await diary_service.check_diary_conditions(current_user.id)
                 logger.info(f"🔍 조건 체크 결과: {condition_result}")
-                
+
                 if condition_result["available"]:
                     logger.info("🔍 available: true, Redis 발행 시작")
                     # Redis 발행 (websocket_service.py와 동일한 형태)
@@ -132,31 +134,33 @@ async def stream_response(
                         port=settings.redis_port,
                         db=settings.redis_db
                     )
-                    
+
                     message = {
                         "type": "diary_available",
                         "target": "blink-study-overlay-monitor",
                         "message": "일기 생성이 가능합니다!"
                     }
-                    
+
                     channel = f"user_{current_user.id}_diary"
                     message_json = json.dumps(message)
-                    
+
                     logger.info(f"🔍 Redis 발행 시도: channel={channel}, message={message_json}")
                     result = redis_client.publish(channel, message_json)
                 else:
                     logger.info(f"🔍 available: false, Redis 발행 건너뜀")
-                    
+
             except Exception as check_err:
-                logger.error(f"❌ 일기 조건 체크 실패: {check_err}")
+                logger.error("diary_condition_failed error_type=%s", type(check_err).__name__)
 
-        return StreamingResponse(event_generator(), media_type="text/plain")
+        return StreamingResponse(event_generator(), media_type="text/event-stream", headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ /chat/response_stream error: {e}", exc_info=True)
+        logger.error("chat_response_failed error_type=%s", type(e).__name__)
         raise HTTPException(status_code=500, detail="GPT 스트리밍 응답 처리 실패")
 
-# /chat/history 라우터 :  채팅내용 렌더링하기 
+# /chat/history 라우터 :  채팅내용 렌더링하기
 from pydantic import BaseModel
 class DateRequest(BaseModel):
     date: str
@@ -191,10 +195,10 @@ def get_chat_history(req: DateRequest,
 
     messages = [
       {
-        "role": r.role, 
+        "role": r.role,
         "message": r.message,
         "timestamp": r.timestamp.isoformat()
-      } 
+      }
       for r in records
     ]
     return {"messages": messages}
@@ -211,18 +215,18 @@ def get_chat_list(
         records = db.query(ChatMessage).filter(
             ChatMessage.user_id == current_user.id
         ).order_by(ChatMessage.timestamp.desc()).all()
-        
+
         # timestamp에서 날짜 추출하여 그룹화
         chat_dates = set()
         for record in records:
             date_str = record.timestamp.strftime("%Y-%m-%d")
             chat_dates.add(date_str)
-        
+
         # 날짜순으로 정렬 (최신순)
         sorted_dates = sorted(list(chat_dates), reverse=True)
-        
+
         return {"chat_dates": sorted_dates}
-        
+
     except Exception as e:
         print("❌ /chat/list 에러:", str(e))
         raise HTTPException(status_code=500, detail="채팅 목록 조회 실패")

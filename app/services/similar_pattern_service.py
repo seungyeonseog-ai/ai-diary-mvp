@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.config.settings import settings
 import logging
 from typing import Any, Dict, List, Optional, Set
 from datetime import datetime
@@ -23,7 +24,7 @@ class SimilarPatternService:
     """
 
     def __init__(self, vdb: Optional[VectorDBService] = None):
-        self.vdb = vdb or VectorDBService()
+        self.vdb = vdb
 
     # ---------------------- Public API ----------------------
     def find_similar_excluding_used_dates(
@@ -42,11 +43,14 @@ class SimilarPatternService:
         - 필요 시 min_similarity 임계값 적용
         반환: [{ text, metadata, distance, similarity? }, ...]
         """
+        if not settings.upper_reports_enabled:
+            return []
+        self.vdb = self.vdb or VectorDBService()
         db = next(get_db())
         try:
             report = (
                 db.query(WeeklyAnalysisReport)
-                .filter(WeeklyAnalysisReport.analysis_id == analysis_id)
+                .filter(WeeklyAnalysisReport.analysis_id == analysis_id, WeeklyAnalysisReport.user_id == user_id)
                 .first()
             )
             if not report:
@@ -54,17 +58,17 @@ class SimilarPatternService:
                 return []
 
             used_dates: List[str] = report.used_dates or []
-            
-            
+
+
             # JSON 문자열인 경우 파싱
             if isinstance(used_dates, str):
                 try:
                     used_dates = json.loads(used_dates)
                 except Exception as e:
                     used_dates = []
-            
+
             exclude_yymmdd: Set[str] = self._dates_to_yymmdd_set(used_dates)
-            
+
 
             raw = self.vdb.search_similar(
                 query,
@@ -72,7 +76,7 @@ class SimilarPatternService:
                 where={"user_id": user_id},
                 return_similarity=True,
             )
-            
+
             # 임계값 필터
             if min_similarity is not None:
                 raw = [x for x in raw if (x.get("similarity") is not None and x["similarity"] >= float(min_similarity))]
@@ -84,13 +88,13 @@ class SimilarPatternService:
                 meta = item.get("metadata") or {}
                 sid = str(meta.get("session_id") or "")
                 sid_yymmdd = self._session_id_to_yymmdd(sid)
-                
-                
-                if sid_yymmdd and sid_yymmdd in exclude_yymmdd:   
+
+
+                if sid_yymmdd and sid_yymmdd in exclude_yymmdd:
                     excluded_count += 1
                     continue
                 out.append(item)
-            
+
 
             return out
         finally:
@@ -100,10 +104,10 @@ class SimilarPatternService:
     def _dates_to_yymmdd_set(self, dates: List[str]) -> Set[str]:
         """"YYYY-MM-DD" 문자열 리스트 → {"yymmdd", ...} 집합"""
         res: Set[str] = set()
-        
+
         if not dates:
             return res
-            
+
         for i, d in enumerate(dates):
             try:
                 dt = datetime.strptime(str(d), "%Y-%m-%d")
@@ -227,5 +231,3 @@ class SimilarPatternService:
             min_similarity=min_similarity,
         )
         return self._extract_session_ids(hits)
-
-

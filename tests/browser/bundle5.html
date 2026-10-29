@@ -1,0 +1,14 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><title>5묶음 격리 화면 검증</title>
+<style>body{font:15px sans-serif;margin:12px}button{padding:7px;margin:4px}iframe{width:100%;height:920px;border:1px solid #ccc}#result{white-space:pre-wrap}</style>
+<h2>5묶음 실제 화면 검증 — 합성 데이터 / 외부 AI 호출 없음</h2>
+<button id="login">합성 계정 로그인·화면 초기화</button>
+<button data-mode="success">채팅 정상</button><button data-mode="generation_failure">채팅 생성 실패</button><button data-mode="save_failure">채팅 저장 실패</button>
+<button id="counts">미제공 요청 건수 확인</button><pre id="result">준비 중</pre><div id="host"></div>
+<script>
+let frame;
+async function login(){const session=await(await fetch('/test/session')).json();localStorage.clear();localStorage.setItem('access_token',session.access_token);localStorage.setItem('user_id','1');localStorage.setItem('nickname','합성 검증 계정');if(frame)frame.remove();frame=document.createElement('iframe');frame.title='실제 앱 격리 검증';frame.src='/test/app';document.getElementById('host').appendChild(frame)}
+document.getElementById('login').onclick=login;
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{await fetch('/test/chat-mode/'+b.dataset.mode,{method:'POST'});document.getElementById('result').textContent=b.textContent});
+document.getElementById('counts').onclick=async()=>document.getElementById('result').textContent=JSON.stringify(await(await fetch('/test/bundle5-observed')).json());
+login();
+</script></html>

@@ -54,6 +54,6 @@ def save_gpt_response(
         db.commit()
         print(f"✅ GPT 응답 저장 완료 - user_id: {user_id}, turn: {turn}")
     except Exception as e:
-        print(f"❌ GPT 응답 저장 실패: {e}")
+        print(f"❌ GPT 응답 저장 실패: {type(e).__name__}")
         db.rollback()
         raise e

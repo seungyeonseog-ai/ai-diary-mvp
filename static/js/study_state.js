@@ -38,7 +38,7 @@
           const saved = get('notifications_owner') === owner() ? JSON.parse(get('notifications') || '{}') : {};
           this.storedNotifications = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
           for (const [key, value] of Object.entries(this.storedNotifications)) {
-            if (!value || !this.isFresh({...value, type:key})) delete this.storedNotifications[key];
+            if (['report','final_report','plant_generation'].includes(key) || !value || !this.isFresh({...value, type:key})) delete this.storedNotifications[key];
           }
           // 구형 캐시에 반대 상태가 함께 있으면 수신 시각상 최신 한 개만 남긴다.
           for (const [a,b] of [['diary_available','diary_unavailable'],
@@ -53,7 +53,7 @@
         this.persist();
       },
       storeNotification(data) {
-        if (!data || !this.isFresh(data)) return;
+        if (!data || ['report','final_report','plant_generation'].includes(data.type) || !this.isFresh(data)) return;
         if (weekly.has(data.type)) {
           const current = this.storedNotifications.seven_day_report || this.storedNotifications.chart_loading_complete;
           if (current && Number(data.analysis_id) < Number(current.analysis_id)) return;
@@ -65,6 +65,7 @@
         if (stateEvent) window.studyState.refresh(true);
       },
       updateNotification(key, data) {
+        if (['report','final_report','plant_generation'].includes(key)) return;
         if (key === 'diary_reset') {
           for (const type of daily) delete this.storedNotifications[type];
         }
@@ -90,7 +91,7 @@
           }
           return window.studyState.refresh();
         }
-        if (page === 'constellation') {
+        if (page === 'constellation' && window.mvpFeatures?.upperReports) {
           const report = this.storedNotifications.final_report;
           let cached = null;
           try { cached = JSON.parse(get('final_report_data') || 'null'); } catch (_) {}

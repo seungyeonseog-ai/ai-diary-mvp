@@ -43,6 +43,8 @@ class SecurityTests(unittest.TestCase):
                 db.add(User(id=uid, username=f'user{uid}', email=f'u{uid}@example.test', hashed_password='unused', nickname='tester'))
             db.add(PersonalityReport(id=1, user_id=1, query=['private'], report_result={'성향': 'private-owner-content'}, date_str='2026-10-28'))
             db.commit()
+        cls.feature_patch = patch.object(constellation.settings, 'upper_reports_enabled', True)
+        cls.feature_patch.start()
         cls.app = FastAPI()
         cls.app.include_router(constellation.router)
         cls.app.include_router(websocket_router.router)
@@ -55,6 +57,7 @@ class SecurityTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls.feature_patch.stop()
         cls.client.close()
         cls.engine.dispose()
 

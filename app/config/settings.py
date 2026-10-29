@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
 
+    # 미제공 기능: 코드/기존 데이터는 보존하고 실행은 기본 중지한다.
+    music_recommendations_enabled: bool = False
+    upper_reports_enabled: bool = False
+
     # 애플리케이션 설정
     app_name: str = "Matabus Chat API"
     debug: bool = True

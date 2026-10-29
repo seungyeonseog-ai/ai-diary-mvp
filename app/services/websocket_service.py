@@ -135,6 +135,7 @@ class WebSocketService:
 
 
                         elif channel == f"user_{user_id}_plant":
+                            continue  # 텃밭 미제공: 구형 알림도 전달하지 않는다.
                             await self.send_notification(websocket, {
                                 "type": "plant_generation",
                                 "target": "garden-section",
@@ -146,6 +147,8 @@ class WebSocketService:
 
                             # similar_pattern_event_check에서 발행하는 최종 리포트 처리
                             if data.get('type') == 'report':
+                                if not settings.upper_reports_enabled:
+                                    continue
                                 await self.send_notification(websocket, {
                                     "type": "final_report",
                                     "target": "study-section",

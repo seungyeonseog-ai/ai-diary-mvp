@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.config.settings import settings
 from typing import Dict, List
 import json
 from datetime import datetime
@@ -16,7 +17,7 @@ from app.tasks.similar_pattern_event_check import check_similar_pattern_analysis
 
 class WeeklySimilarFlowService:
     def __init__(self):
-        self.sim = SimilarPatternService()
+        self.sim = None
 
     def run(self, user_id: int, analysis_id: int) -> Dict[str, object]:
         """
@@ -26,12 +27,15 @@ class WeeklySimilarFlowService:
           3) 과거 유사 세션들과 비교 분석
           4) SimilarPattern 테이블에 저장/업데이트
         """
+        if not settings.upper_reports_enabled:
+            return {"ok": False, "reason": "feature_disabled"}
+        self.sim = self.sim or SimilarPatternService()
         db = next(get_db())
         try:
             # 1. WeeklyAnalysisReport 조회
             report = (
                 db.query(WeeklyAnalysisReport)
-                .filter(WeeklyAnalysisReport.analysis_id == analysis_id)
+                .filter(WeeklyAnalysisReport.analysis_id == analysis_id, WeeklyAnalysisReport.user_id == user_id)
                 .first()
             )
             if not report:
@@ -40,7 +44,7 @@ class WeeklySimilarFlowService:
             # 2. used_dates 파싱 및 yymmdd 변환
             yymmdd_list = self._parse_used_dates_to_yymmdd(report.used_dates)
             print(f"🔍 [DEBUG] 변환된 yymmdd 리스트: {yymmdd_list}")
-            
+
             # 3. 일주일치 세션 요약 조회 (yymmdd ASC, 00n ASC)
             weekly_summaries = self._get_weekly_session_summaries_ordered(
                 db, user_id, yymmdd_list
@@ -59,8 +63,7 @@ class WeeklySimilarFlowService:
                 min_similarity=0.55,
             )
             print(f"🔍 [DEBUG] 벡터에서 찾아진 유사 세션 수: {len(session_ids)}")
-            print(f"🔍 [DEBUG] 벡터에서 찾아진 유사 세션들: {session_ids}")
-            
+
             if not session_ids:
                 print(f"🔍 [DEBUG] 유사한 세션이 없음")
                 return {"ok": True, "prompt": "유사한 세션이 없습니다.", "sessions": []}
@@ -68,7 +71,7 @@ class WeeklySimilarFlowService:
             # 6. 과거 유사 세션 내용 조회
             repo = WeeklyAnalysisRepository(db)
             grouped: Dict[str, List[Dict[str, object]]] = {}
-            
+
             def _n_key(sid: str) -> int:
                 try:
                     return int(sid.split("_")[1])
@@ -93,29 +96,28 @@ class WeeklySimilarFlowService:
 
             # 8. GPT 호출 및 응답 파싱
             gpt_response = self._call_gpt_and_parse(prompt_text)
-            
+
             # 9. SimilarPattern 저장/업데이트
             print(f"🔍 [DEBUG] SimilarPattern 저장/업데이트 시작")
             print(f"🔍 [DEBUG] 저장할 데이터: user_id={user_id}, analysis_id={analysis_id}")
-            print(f"🔍 [DEBUG] 저장할 session_ids: {session_ids}")
-            
+
             similar_pattern_repo = SimilarPatternRepository(db)
             print(f"similar repo 호출 성공")
             similar_pattern_repo.save_or_update_pattern(
                 user_id, analysis_id, query, session_ids, gpt_response
             )
             print(f"🔍 [DEBUG] SimilarPattern 저장/업데이트 완료")
-            
+
             # 10. 유사 패턴 분석 준비 상태 체크 태스크 호출
             try:
                 check_similar_pattern_analysis_ready.delay(user_id)
                 print(f"✅ 유사 패턴 분석 준비 상태 체크 태스크 호출 완료: user_id={user_id}")
             except Exception as e:
-                print(f"❌ 유사 패턴 분석 준비 상태 체크 태스크 호출 실패: {e}")
+                print(f"❌ 유사 패턴 분석 준비 상태 체크 태스크 호출 실패: {type(e).__name__}")
 
             return {
-                "ok": True, 
-                "prompt": prompt_text, 
+                "ok": True,
+                "prompt": prompt_text,
                 "weekly_sessions": weekly_summaries,
                 "similar_sessions": session_ids,
                 "query": query,
@@ -130,7 +132,7 @@ class WeeklySimilarFlowService:
             dates = json.loads(used_dates_json)
         else:
             dates = used_dates_json or []
-        
+
         yymmdd_list = []
         for date_str in dates:
             try:
@@ -138,11 +140,11 @@ class WeeklySimilarFlowService:
                 yymmdd = dt.strftime("%y%m%d")
                 yymmdd_list.append(yymmdd)
             except Exception as e:
-                print(f"❌ 날짜 변환 실패: {date_str} - {e}")
-        
+                print(f"❌ 날짜 변환 실패: {date_str} - {type(e).__name__}")
+
         yymmdd_list.sort()  # 오름차순 정렬
         return yymmdd_list
-    
+
 
 
     def _get_weekly_session_summaries_ordered(self, db, user_id: int, yymmdd_list: List[str]) -> List[Dict]:
@@ -154,14 +156,14 @@ class WeeklySimilarFlowService:
                 GPTSessionSummary.user_id == user_id,
                 GPTSessionSummary.session_id.like(f"{yymmdd}_%")
             ).order_by(GPTSessionSummary.session_id).all()
-            
+
             for summary in daily_summaries:
                 summaries.append({
                     "session_id": summary.session_id,
                     "summary": summary.summary,
                     "yymmdd": yymmdd
                 })
-        
+
         return summaries
 
     def _build_query_from_keyword_pattern(self, keyword_pattern_result) -> str:
@@ -184,9 +186,11 @@ class WeeklySimilarFlowService:
                 {"role": "system", "content": "당신은 사용자의 패턴을 분석하는 전문가입니다. 정확한 JSON 형태로 응답해주세요."},
                 {"role": "user", "content": prompt_text}
             ]
-            
+
+            if not settings.upper_reports_enabled:
+                return {}
             response = call_gpt(prompt_for_gpt)
-            
+
             # JSON 파싱
             cleaned_response = response.strip()
             if cleaned_response.startswith('```json'):
@@ -195,22 +199,20 @@ class WeeklySimilarFlowService:
                 cleaned_response = cleaned_response[3:]
             if cleaned_response.endswith('```'):
                 cleaned_response = cleaned_response[:-3]
-            
+
             parsed = json.loads(cleaned_response)
-            
+
             result = {
                 "유사한 패턴": parsed.get("유사한 패턴", "없음"),
                 "성향": parsed.get("성향", "없음"),
                 "무의식적 통찰": parsed.get("무의식적 통찰", "없음")
             }
-            
+
             return result
         except Exception as e:
-            print(f"❌ GPT 호출 또는 파싱 실패: {e}")
+            print(f"❌ GPT 호출 또는 파싱 실패: {type(e).__name__}")
             return {
                 "유사한 패턴": "없음",
-                "성향": "없음", 
+                "성향": "없음",
                 "무의식적 통찰": "없음"
             }
-
-

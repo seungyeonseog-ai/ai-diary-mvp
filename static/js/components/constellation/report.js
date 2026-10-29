@@ -2,6 +2,7 @@
 
 // 서버 API 호출 - 성격 리포트 데이터 가져오기
 async function fetchPersonalityReportData(reportId) {
+  if (!window.mvpFeatures?.upperReports) return;
   try {
 
     const response = await fetch(`/personality-report/${reportId}`, {
@@ -65,6 +66,7 @@ function bindConstellationListenersOnce() {
 
 // 초기화 함수 - 탭 진입 시 호출
 window.initConstellationUI = function() {
+  if (!window.mvpFeatures?.upperReports) return;
   bindConstellationListenersOnce();  // 리스너 보장
 
 

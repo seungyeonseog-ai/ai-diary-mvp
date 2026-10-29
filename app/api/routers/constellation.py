@@ -1,3 +1,4 @@
+from app.config.settings import settings
 import logging
 from typing import Any, Dict
 
@@ -20,6 +21,8 @@ async def get_personality_report(
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """본인 소유 리포트만 반환하고 타인 리포트의 존재도 노출하지 않는다."""
+    if not settings.upper_reports_enabled:
+        raise HTTPException(status_code=404, detail="리포트 기능은 준비 중입니다.")
     try:
         report = db.query(PersonalityReport).filter(
             PersonalityReport.id == report_id,

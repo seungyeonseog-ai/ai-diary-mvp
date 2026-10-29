@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
       console.error('❌ access_token이 없습니다');
       return null;
     }
-    
+
     try {
       // JWT 토큰에서 user_id 추출
       const encoded = accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log(`🔗 WebSocket 연결 시도: user_id=${userId}`);
     const socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${socketProtocol}//${window.location.host}/ws/${userId}`);
-    
+
     ws.onopen = function() {
       ws.send(JSON.stringify({
         type: 'authenticate',
@@ -58,25 +58,18 @@ document.addEventListener('DOMContentLoaded', function() {
       reconnectAttempts = 0; // 연결 성공 시 재시도 횟수 초기화
       window.studyState.refresh(true);
     };
-    
+
     ws.onmessage = function(event) {
       const data = JSON.parse(event.data);
       if (data.type === 'pong') return;
-      console.log('📨 WebSocket 메시지 수신:', data);
-      console.log('🔍 메시지 상세:', {
-        type: data.type,
-        priority: data.priority,
-        reason: data.reason,
-        message: data.message
-      });
-      
+      if (['report', 'final_report', 'plant_generation'].includes(data.type)) return;
       // 전역 알림 관리자에 저장 (우선순위 처리 포함)
       window.globalNotificationManager.storeNotification(data);
     };
-    
+
     ws.onclose = function(event) {
       console.log('❌ WebSocket 연결 해제됨:', event.code, event.reason);
-      
+
       // 정상적인 종료가 아닌 경우에만 재연결 시도
       if (event.code !== 1000 && event.code !== 1008 && reconnectAttempts < maxReconnectAttempts) {
         console.log(`🔄 재연결 시도 ${reconnectAttempts + 1}/${maxReconnectAttempts}`);
@@ -86,7 +79,7 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('❌ 최대 재연결 시도 횟수 초과');
       }
     };
-    
+
     ws.onerror = function(error) {
       console.error('❌ WebSocket 에러:', error);
     };
@@ -97,17 +90,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // final_report 알림 리스너 등록 (한 번만)
   function bindFinalReportListenerOnce() {
+    if (!window.mvpFeatures?.upperReports) return;
     if (window.__finalReportListenerBound) return;
     window.__finalReportListenerBound = true;
-    
+
     console.log('📋 final_report 리스너 등록됨');
-    
+
     document.addEventListener('final_report', function(event) {
       const data = event.detail;
-      
+
       if (data.type === 'final_report') {
         console.log('📋 final_report 알림 수신:', data);
-        
+
         // 1. 현재 활성화된 메인 탭의 첫 번째 서브탭(알림)에 "1" 표시
         const activeMainTab = document.querySelector('.tab.active');
         if (activeMainTab) {
@@ -115,14 +109,14 @@ document.addEventListener('DOMContentLoaded', function() {
           const subTabsContainer = document.querySelector('.sub-tabs');
           if (subTabsContainer) {
             const firstSubTab = subTabsContainer.querySelector('.sub-tab:first-child');
-            
+
             if (firstSubTab) {
               // 기존 알림 숫자 제거
               const existingBadge = firstSubTab.querySelector('.notification-badge');
               if (existingBadge) {
                 existingBadge.remove();
               }
-              
+
               // 새 알림 배지 추가
               const badge = document.createElement('span');
               badge.className = 'notification-badge';
@@ -143,7 +137,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
           }
         }
-      
+
       // 2. 팝업 띄우기 (showConfirm 사용)
       if (window.popupManager) {
         window.popupManager.showConfirm(
@@ -195,7 +189,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // 동적 영역 지정 
+  // 동적 영역 지정
   const mainTabs = document.querySelectorAll('.main-tab');
   const mainContent = document.getElementById('main-content');
   const subTabs = document.querySelector('.sub-tabs');
@@ -220,13 +214,13 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(res => res.text())
       .then(html => {
         mainContent.innerHTML = html;
-        
+
         // 모듈 준비 뒤 상태를 복원한다. 타이머 속도에 의존하지 않는다.
         import('/static/js/components/study/section.js').then(() => {
           window.globalNotificationManager.restoreNotifications('study');
         });
       });
-    
+
     // CSS 동적 로드 (이미 링크되어 있지 않으면)
     if (!document.querySelector('link[href="/static/css/components/study/section.css"]')) {
       const link = document.createElement('link');
@@ -248,8 +242,17 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   }
 
+  function showPreparing(name) {
+    mainContent.replaceChildren();
+    const notice = document.createElement('p');
+    notice.textContent = `${name} 기능은 준비 중입니다.`;
+    notice.style.cssText = 'padding:40px;text-align:center;';
+    mainContent.appendChild(notice);
+  }
+
   // 텃밭 탭 콘텐츠 로드 함수
   function loadGardenSection() {
+    if (!window.mvpFeatures?.garden) return showPreparing('텃밭');
     fetch('/templates/components/garden/section.html')
       .then(res => res.text())
       .then(html => {
@@ -260,16 +263,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 별자리(리포트) 탭 콘텐츠 로드 함수
   function loadConstellationSection() {
+    if (!window.mvpFeatures?.upperReports) return showPreparing('리포트');
     fetch('/templates/components/constellation/report.html')
       .then(response => response.text())
       .then(html => {
         mainContent.innerHTML = html;
-        
+
         // JS 모듈 로드
         console.log('constellation/report.js 로드 시작');
         import('/static/js/components/constellation/report.js').then(() => {
           console.log('constellation/report.js 로드 완료');
-          
+
           // 초기화 함수 호출
           if (window.initConstellationUI) {
             console.log('initConstellationUI 함수 호출');
@@ -287,9 +291,14 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   }
 
-  // 서브탭 로드 함수 
+  // 서브탭 로드 함수
   function updateSubTabs(tab) {
     if (!subTabs) return;
+    if ((tab === 'garden' && !window.mvpFeatures?.garden) ||
+        (tab === 'constellation' && !window.mvpFeatures?.upperReports)) {
+      subTabs.replaceChildren();
+      return;
+    }
     if (tab === 'garden') {
       subTabs.innerHTML = `
         <div class="sub-tab">알림</div>
@@ -362,9 +371,12 @@ document.addEventListener('DOMContentLoaded', function() {
   // 서브탭 클릭 시 active 처리 및 콘텐츠 전환
   document.addEventListener('click', function(e) {
     if (e.target.classList.contains('sub-tab')) {
+      const active = document.querySelector('.main-tab.active')?.dataset.tab;
+      if ((active === 'garden' && !window.mvpFeatures?.garden) ||
+          (active === 'constellation' && !window.mvpFeatures?.upperReports)) return;
       document.querySelectorAll('.sub-tab').forEach(tab => tab.classList.remove('active'));
       e.target.classList.add('active');
-      
+
       // 씨앗 심기 클릭 시 콘텐츠 전환
       if (e.target.textContent.trim() === '씨앗 심기') {
         fetch('/templates/components/garden/sub_seed_made.html')
@@ -381,7 +393,7 @@ document.addEventListener('DOMContentLoaded', function() {
           document.head.appendChild(link);
         }
       }
-      
+
       // 대화하기 클릭 시 콘텐츠 전환
       if (e.target.textContent.trim() === '대화하기') {
         fetch('/templates/components/chatting/section.html')
@@ -393,7 +405,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
           });
       }
-      
+
       // 채팅목록 클릭 시 콘텐츠 전환
       if (e.target.textContent.trim() === '채팅목록') {
         console.log('채팅목록 서브 탭 클릭됨');
@@ -423,12 +435,12 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('sub_chat_list.html 로드 실패:', err);
           });
       }
-      
+
       // 일주일 차트 클릭 시 콘텐츠 전환
       if (e.target.textContent.trim() === '일주일 차트') {
         switchToSevenChartTab();
       }
-      
+
       // 나의 텃밭 클릭 시 콘텐츠 전환
       if (e.target.textContent.trim() === '나의 텃밭') {
         fetch('/templates/components/garden/section.html')
@@ -449,7 +461,7 @@ document.addEventListener('DOMContentLoaded', function() {
               // WebSocket 알림 상태 복원
               console.log('📤 나의 서재 서브탭 - WebSocket 알림 상태 복원');
               window.globalNotificationManager.restoreNotifications('study');
-              
+
               // 상태 체크 함수 호출
               if (window.checkStudyNotificationStatus) {
                 window.checkStudyNotificationStatus();
@@ -488,11 +500,11 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('sub_diary_generate.js 로드 시작');
         import('/static/js/components/study/sub_diary_generate.js').then(() => {
           console.log('sub_diary_generate.js 로드 완료');
-          
+
           // WebSocket 알림 상태 복원
           console.log('📤 일기생성 서브탭 - WebSocket 알림 상태 복원');
           window.globalNotificationManager.restoreNotifications('study');
-          
+
           // 초기화 함수 호출
           if (window.initDiaryGeneration) {
             console.log('initDiaryGeneration 함수 호출');
@@ -553,7 +565,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // 일주일 차트 서브탭 전환 함수
   function switchToSevenChartTab() {
     console.log('일주일 차트 서브 탭 클릭됨');
-    
+
     // HTML 로드
     fetch('/templates/components/study/seven_chart.html')
       .then(res => {
@@ -563,12 +575,12 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(html => {
         console.log('seven_chart.html 로드됨');
         mainContent.innerHTML = html;
-        
+
         // JS 모듈 로드
         console.log('seven_chart.js 로드 시작');
         import('/static/js/components/study/seven_chart.js').then(() => {
           console.log('seven_chart.js 로드 완료');
-          
+
           // 초기화 함수 호출
           if (window.initSevenChartUI) {
             console.log('initSevenChartUI 함수 호출');
@@ -579,7 +591,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }).catch(err => {
           console.error('JS 모듈 로드 실패:', err);
         });
-        
+
         console.log('일주일 차트 페이지 로드 완료');
       })
       .catch(err => {
@@ -592,16 +604,16 @@ document.addEventListener('DOMContentLoaded', function() {
   document.addEventListener('diary_reset', function(event) {
     const data = event.detail;
     console.log('🕛 diary_reset 이벤트 수신:', data);
-    
+
     // 전역 알림 관리자에서 diary_unavailable 제거
     if (window.globalNotificationManager) {
       window.globalNotificationManager.clearNotification('diary_unavailable');
     }
-    
+
     // 전역 상태 초기화
     window.diaryUnavailableReason = null;
         window.lastCheckedDate = new Date().toLocaleDateString('ko-KR');
-    
+
     console.log('✅ 자정 리셋 완료 - diary_unavailable 상태 제거');
   });
 

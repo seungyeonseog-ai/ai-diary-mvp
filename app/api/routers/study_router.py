@@ -16,6 +16,7 @@ import redis
 import logging
 from app.config.settings import settings
 from sqlalchemy import func
+from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository, SourceResolutionError
 
 router = APIRouter(prefix="/study", tags=["study"])
 logger = logging.getLogger(__name__)
@@ -445,12 +446,8 @@ async def get_seven_day_report(
         
         print(f"🔍 weekly_data 조회 성공: week_start_date={weekly_data.week_start_date}, week_end_date={weekly_data.week_end_date}")
         
-        # diary_analysis_report 테이블에서 데이터 조회 (date_str 사용)
-        diary_data = db.query(DiaryAnalysisReport).filter(
-            DiaryAnalysisReport.user_id == current_user.id,
-            DiaryAnalysisReport.date_str >= weekly_data.week_start_date.strftime("%Y-%m-%d"),
-            DiaryAnalysisReport.date_str <= weekly_data.week_end_date.strftime("%Y-%m-%d")
-        ).all()
+        # 분석 당시 실제 입력만 반환한다. 과거 결과는 모호하지 않은 날짜 집합과 호환한다.
+        diary_data = WeeklyAnalysisRepository(db).get_analysis_sources(weekly_data)
         
         
         # 응답 데이터 구성
@@ -484,6 +481,10 @@ async def get_seven_day_report(
         
     except HTTPException:
         raise
+    except SourceResolutionError:
+        logger.warning("weekly_report_sources_unresolved analysis_id=%s user_id=%s",
+                       analysis_id, current_user.id)
+        raise HTTPException(status_code=409, detail="주간 분석의 원본 자료를 정확히 확인할 수 없습니다.") from None
     except Exception as e:
         # 예외 본문에는 SQL 파라미터·개인 원문이 포함될 수 있다.
         logger.error("weekly_report_read_failed analysis_id=%s user_id=%s error_type=%s",

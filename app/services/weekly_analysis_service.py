@@ -1,6 +1,6 @@
 import json
 from sqlalchemy.orm import Session
-from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository
+from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository, SourceBatchConflict
 from app.clients.gpt_api import call_gpt
 from app.prompt.weekly_analysis_prompts import (
     emotion_trend_prompt, 
@@ -8,28 +8,32 @@ from app.prompt.weekly_analysis_prompts import (
     comprehensive_analysis_prompt
 )
 from datetime import datetime
-from app.services.weekly_similar_flow_service import WeeklySimilarFlowService
+import logging
+
+logger = logging.getLogger(__name__)
 
 class WeeklyAnalysisService:
     def __init__(self, db: Session):
         self.db = db
-        self.weekly_repo = WeeklyAnalysisRepository(db)
     
     def analyze_weekly_data(self, user_id: int):
-        """7일간 데이터로 주간 분석 실행"""
-        
-        # 1. 사용되지 않은 7일간 일일 분석 리포트 조회
-        unused_reports = self.weekly_repo.get_unused_weekly_reports(user_id, 7)
-        
-        if len(unused_reports) < 7:
-            print(f"❌ 7일간 데이터 부족: {len(unused_reports)}일")
-            return None
-        
-        # 2. 데이터 준비
-        weekly_data = self._prepare_weekly_data(unused_reports)
-        
-        # 3. 순차적 체인 분석 실행
+        """원본 선택·저장에 짧은 전용 세션을 써서 AI 대기 중 DB를 점유하지 않는다."""
+        # 호출자의 세션·미확정 변경에는 영향을 주지 않는다.
         try:
+            with Session(bind=self.db.get_bind(), expire_on_commit=False) as read_db:
+                repo = WeeklyAnalysisRepository(read_db)
+                unused_reports = repo.get_unused_weekly_reports(user_id, 7)
+                if len(unused_reports) < 7:
+                    return None
+                weekly_data = self._prepare_weekly_data(unused_reports)
+                report_ids = [report.report_id for report in unused_reports]
+                used_dates = [report.date_str for report in unused_reports]
+                week_start = unused_reports[0].timestamp
+                week_end = unused_reports[-1].timestamp
+                if repo.has_saved_batch(user_id, week_start, week_end, used_dates, report_ids):
+                    logger.warning("weekly_existing_batch_skipped user_id=%s", user_id)
+                    return None
+            # DB 세션을 닫은 상태에서 AI 분석 3단계를 실행한다.
             # 3-1. 감정 변화 분석
             emotion_result = self._analyze_emotion_trend(weekly_data)
             
@@ -41,58 +45,36 @@ class WeeklyAnalysisService:
                 emotion_result, keyword_result, weekly_data
             )
             
-            # 4. 결과 저장
-            week_start = unused_reports[0].timestamp
-            week_end = unused_reports[-1].timestamp
-            
-            # used_dates 준비 (날짜 문자열 리스트) - JSON 컬럼에 맞게 처리
-            used_dates = [report.date_str for report in unused_reports]
-            print(f"🔍 [DEBUG] used_dates 생성: {used_dates}")
-            
-            # JSON 컬럼 호환성을 위해 명시적 변환 시도
-            try:
-                import json
-                used_dates_json = json.dumps(used_dates, ensure_ascii=False)
-                print(f"🔍 [DEBUG] used_dates JSON 변환: {used_dates_json}")
-                used_dates = used_dates_json
-            except Exception as e:
-                print(f"⚠️ [WARN] JSON 변환 실패, 원본 리스트 사용: {e}")
-            
-            analysis = self.weekly_repo.save_weekly_analysis(
-                user_id=user_id,
-                week_start_date=week_start,
-                week_end_date=week_end,
-                used_dates=used_dates,
-                emotion_result=emotion_result,
-                keyword_result=keyword_result,
-                comprehensive_result=comprehensive_result
-            )
-            
-            # 5. 사용된 리포트들 마킹
-            report_ids = [report.report_id for report in unused_reports]
-            self.weekly_repo.mark_reports_as_used(report_ids)
-            
-
-            
-            print(f"✅ 주간 분석 완료: user_id={user_id}")
-
-            
-            # 6. 주간 저장 이후 유사 세션 프롬프트 흐름 실행 (개발/운영 공통)
-            try:
-                flow = WeeklySimilarFlowService()
-                flow_result = flow.run(user_id=user_id, analysis_id=analysis.analysis_id)
-                print("flow 서비스호출 ")
-                if flow_result and flow_result.get("ok"):
-                    print("🔁 [DEBUG] 유사 세션 프롬프트 생성 완료")
-                else:
-                    print("⚠️ [WARN] 유사 세션 프롬프트 생성 실패 또는 없음:", flow_result)
-            except Exception as _e:
-                print(f"⚠️ [WARN] 유사 세션 흐름 실행 중 예외: {_e}")
+            # 4. 원본 사용 처리와 결과를 함께 커밋한다.
+            with Session(bind=self.db.get_bind(), expire_on_commit=False) as write_db:
+                analysis = WeeklyAnalysisRepository(write_db).save_weekly_analysis(
+                    user_id=user_id,
+                    week_start_date=week_start,
+                    week_end_date=week_end,
+                    used_dates=used_dates,
+                    emotion_result=emotion_result,
+                    keyword_result=keyword_result,
+                    comprehensive_result=comprehensive_result,
+                    report_ids=report_ids
+                )
+            logger.info("weekly_analysis_saved user_id=%s analysis_id=%s", user_id, analysis.analysis_id)
+            self._run_followup(user_id, analysis.analysis_id)
             return analysis
-            
-        except Exception as e:
-            print(f"❌ 주간 분석 실패: {str(e)}")
+        except SourceBatchConflict:
+            logger.info("weekly_batch_already_consumed user_id=%s", user_id)
             return None
+        except Exception as e:
+            logger.error("weekly_analysis_failed user_id=%s error_type=%s", user_id, type(e).__name__)
+            return None
+
+    def _run_followup(self, user_id, analysis_id):
+        # 기존 후속 처리는 커밋 뒤에만 실행한다. 제공 범위 정리는 M12에서 한다.
+        try:
+            from app.services.weekly_similar_flow_service import WeeklySimilarFlowService
+            flow = WeeklySimilarFlowService()
+            flow.run(user_id=user_id, analysis_id=analysis_id)
+        except Exception as e:
+            logger.warning("weekly_followup_failed user_id=%s error_type=%s", user_id, type(e).__name__)
     
     def _prepare_weekly_data(self, weekly_reports):
         """주간 데이터 준비"""
@@ -202,4 +184,4 @@ class WeeklyAnalysisService:
             return result
         except json.JSONDecodeError as e:
             print(f"❌ [ERROR] 종합 분석 JSON 파싱 실패: {e}")
-            raise Exception(f"종합 분석 GPT 응답이 유효한 JSON이 아닙니다: {e}") 
+            raise Exception(f"종합 분석 GPT 응답이 유효한 JSON이 아닙니다: {e}")

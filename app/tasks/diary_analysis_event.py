@@ -1,11 +1,13 @@
 from celery import shared_task
 from sqlalchemy.orm import sessionmaker
 from app.core.connection import engine
-from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository
 from app.services.weekly_analysis_service import WeeklyAnalysisService
 from app.config.settings import settings
 import redis
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 SessionLocal = sessionmaker(bind=engine)
 redis_client = redis.Redis(
@@ -15,7 +17,22 @@ redis_client = redis.Redis(
 )
 
 
-# diary_anaylsis report 7번 업뎃되면 weekly 실행하기 위한 이벤트 리스너 
+def run_weekly_analysis_and_notify(db, user_id, publish):
+    """두 진입 경로가 같은 저장 정책을 쓰고, 커밋 완료된 결과만 알린다."""
+    result = WeeklyAnalysisService(db).analyze_weekly_data(user_id)
+    if result is None:
+        return None
+    message = {
+        "type": "seven_day_report",
+        "target": "study-section",
+        "message": "7일 감정 레포트가 완성되었습니다!",
+        "user_id": user_id,
+        "analysis_id": result.analysis_id,
+        "week_start_date": result.week_start_date.strftime("%m-%d"),
+        "week_end_date": result.week_end_date.strftime("%m-%d")
+    }
+    publish(f"user_{user_id}_report", json.dumps(message))
+    return result
 
 
 @shared_task
@@ -25,37 +42,9 @@ def check_weekly_analysis_after_diary_save(user_id: int):
     
     db = SessionLocal()
     try:
-        weekly_repo = WeeklyAnalysisRepository(db)
-        
-        # 1. 사용되지 않은 일일 분석 리포트 조회 (날짜순 정렬)
-        unused_reports = weekly_repo.get_unused_weekly_reports(user_id, 7)
-        
-        # 2. 7일치가 모였는지 확인
-        if len(unused_reports) >= 7:
-            # 3. 주간 분석 실행
-            service = WeeklyAnalysisService(db)
-            result = service.analyze_weekly_data(user_id)
-            
-            if result:
-                # 4. WebSocket 알림 발행 (일기 생성과 동일한 패턴)
-                message = {
-                    "type": "seven_day_report",
-                    "target": "study-section",
-                    "message": "7일 감정 레포트가 완성되었습니다!",
-                    "user_id": user_id,
-                    "analysis_id": result.analysis_id,
-                    "week_start_date": result.week_start_date.strftime("%m-%d"),
-                    "week_end_date": result.week_end_date.strftime("%m-%d")
-                }
-                redis_client.publish(f"user_{user_id}_report", json.dumps(message))
-                
-                print(f"✅ 주간 분석 완료 및 알림 발행: user_id={user_id}")
-            else:
-                print(f"❌ 주간 분석 실패: user_id={user_id}")
-        else:
-            print(f"⏳ 아직 7일치 모이지 않음: user_id={user_id}, days={len(unused_reports)}")
+        run_weekly_analysis_and_notify(db, user_id, redis_client.publish)
             
     except Exception as e:
-        print(f"❌ 주간 분석 체크 실패: {str(e)}")
+        logger.error("weekly_event_failed user_id=%s error_type=%s", user_id, type(e).__name__)
     finally:
-        db.close() 
+        db.close()

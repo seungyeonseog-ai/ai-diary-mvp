@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }));
       console.log('✅ WebSocket 연결됨');
       reconnectAttempts = 0; // 연결 성공 시 재시도 횟수 초기화
+      window.studyState.refresh(true);
     };
     
     ws.onmessage = function(event) {
@@ -92,257 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // 전역 알림 관리자 초기화
-  window.globalNotificationManager = {
-    storedNotifications: {},
-    
-    // 페이지 로드 시 localStorage에서 복원
-    initializeFromStorage() {
-      const savedNotifications = localStorage.getItem('notifications');
-      if (savedNotifications) {
-        this.storedNotifications = JSON.parse(savedNotifications);
-        console.log('📦 localStorage에서 알림 복원:', this.storedNotifications);
-      }
-    },
-    
-    // 메시지 저장 (우선순위 기반)
-    storeNotification(data) {
-      console.log('📦 전역 알림 관리자 - 메시지 저장 시작:', data);
-      const key = data.type; // 'diary_available' 또는 'diary_unavailable'
-      
-      if (this.storedNotifications[key]) {
-        const existing = this.storedNotifications[key];
-        console.log('📊 기존 저장된 알림:', existing);
-        
-        // 우선순위가 높으면 무조건 업데이트
-        if (data.priority === 'high' && existing.priority !== 'high') {
-          console.log('🔄 우선순위 높은 메시지로 업데이트');
-          this.updateNotification(key, data);
-        }
-        // 우선순위가 같으면 최신 것으로 업데이트
-        else if (data.priority === existing.priority) {
-          console.log('🔄 최신 메시지로 업데이트');
-          this.updateNotification(key, data);
-        }
-        // 우선순위가 낮으면 무시
-        else {
-          console.log('❌ 우선순위 낮아서 무시');
-          return;
-        }
-      } else {
-        // 첫 번째 메시지면 저장
-        console.log('📝 첫 번째 메시지 저장');
-        this.updateNotification(key, data);
-      }
-    },
-    
-    // 알림 업데이트 (우선순위 처리 완료된 것만 localStorage에 저장)
-    updateNotification(key, data) {
-      console.log('🔄 알림 업데이트 중:', key, data);
-      
-      this.storedNotifications[key] = {
-        ...data,
-        timestamp: Date.now(),
-        isActive: true
-      };
-      
-      // localStorage에 저장 (우선순위 처리 완료된 것만)
-      localStorage.setItem('notifications', JSON.stringify(this.storedNotifications));
-      console.log('💾 localStorage에 알림 저장 완료');
-      
-      // final_report일 때 별도 데이터 저장
-      if (data.type === 'final_report') {
-        localStorage.setItem('final_report_data', JSON.stringify({
-          report_id: data.report_id,
-          timestamp: data.timestamp
-        }));
-        console.log('💾 final_report_data 저장 완료');
-      }
-      
-     // 특정 타입의 알림이면 즉시 전송 (우선순위 처리)
-       if (data.type === 'diary_available' || data.type === 'diary_unavailable' || data.type === 'encourage_available' || data.type === 'seven_day_report' || data.type === 'chart_loading_complete' || data.type === 'final_report') {
-         this.dispatchToAllComponents(data);
-       }
-    },
-    
-    // 모든 컴포넌트로 전역 전달
-    dispatchToAllComponents(data) {
-      console.log(`📤 전역으로 ${data.type} 알림 전달 시작:`, data);
-      const customEvent = new CustomEvent(data.type, { detail: data });
-      document.dispatchEvent(customEvent);
-      console.log(`✅ 전역으로 ${data.type} 알림 전달 완료`);
-    },
-    
-    // 페이지 전환 시 복원
-    restoreNotifications(page) {
-      console.log('🔄 페이지 전환 시 알림 복원 시작:', page);
-      console.log('📦 현재 저장된 모든 알림:', this.storedNotifications);
-      
-      if (page === 'study') {
-        // diary_available 복원
-        const availableNotification = this.storedNotifications['diary_available'];
-        if (availableNotification && availableNotification.isActive) {
-          console.log('✅ diary_available 알림 복원:', availableNotification);
-          this.dispatchToAllComponents(availableNotification);
-        } else {
-          console.log('❌ diary_available 알림 없음 또는 비활성');
-        }
-        
-        // diary_unavailable도 복원
-        const unavailableNotification = this.storedNotifications['diary_unavailable'];
-        if (unavailableNotification && unavailableNotification.isActive) {
-          console.log('✅ diary_unavailable 알림 복원:', unavailableNotification);
-          this.dispatchToAllComponents(unavailableNotification);
-        } else {
-          console.log('❌ diary_unavailable 알림 없음 또는 비활성');
-        }
-        
-        // encourage_available 복원
-        const encourageNotification = this.storedNotifications['encourage_available'];
-        if (encourageNotification && encourageNotification.isActive) {
-          console.log('✅ encourage_available 알림 복원:', encourageNotification);
-          this.dispatchToAllComponents(encourageNotification);
-        } else {
-          console.log('❌ encourage_available 알림 없음 또는 비활성');
-        }
-        
-        // encourage_unavailable 복원
-        const encourageUnavailableNotification = this.storedNotifications['encourage_unavailable'];
-        if (encourageUnavailableNotification && encourageUnavailableNotification.isActive) {
-          console.log('✅ encourage_unavailable 알림 복원:', encourageUnavailableNotification);
-          this.dispatchToAllComponents(encourageUnavailableNotification);
-        } else {
-          console.log('❌ encourage_unavailable 알림 없음 또는 비활성');
-        }
-        
-         // seven day report 복원 (analysis_id 비교 후 조건부 복원)
-         const sevenDayReport = this.storedNotifications['seven_day_report'];
-         if (sevenDayReport && sevenDayReport.isActive) {
-           // 로컬스토리지에서 기존 데이터 확인
-           const existingData = localStorage.getItem('seven_day_report_data');
-           
-           if (existingData) {
-             try {
-               const storedData = JSON.parse(existingData);
-               const storedAnalysisId = storedData.analysis_id;
-               const restoredAnalysisId = sevenDayReport.analysis_id;
-               
-               if (storedAnalysisId === restoredAnalysisId) {
-                 console.log('✅ 동일한 analysis_id, seven day report 복원 생략');
-               } else {
-                 console.log('✅ 다른 analysis_id, seven day report 복원 실행');
-                 this.dispatchToAllComponents(sevenDayReport);
-               }
-             } catch (error) {
-               console.error('❌ 기존 데이터 파싱 실패:', error);
-               // 파싱 실패 시 복원 실행
-               this.dispatchToAllComponents(sevenDayReport);
-             }
-           } else {
-             // 기존 데이터가 없으면 복원 실행
-             console.log('✅ 기존 데이터 없음, seven day report 복원 실행');
-             this.dispatchToAllComponents(sevenDayReport);
-           }
-         } else {
-           console.log('❌ seven day report 알림 없음 또는 비활성');
-         }
-         
-         // chart loading complete 복원
-         const chartLoadingComplete = this.storedNotifications['chart_loading_complete'];
-         if (chartLoadingComplete && chartLoadingComplete.isActive) {
-           console.log('✅ chart loading complete 알림 복원:', chartLoadingComplete);
-           this.dispatchToAllComponents(chartLoadingComplete);
-         } else {
-           console.log('❌ chart loading complete 알림 없음 또는 비활성');
-         }
-      } else if (page === 'constellation') {
-        // final_report 복원 (report_id 비교 후 조건부 복원)
-        const finalReport = this.storedNotifications['final_report'];
-        if (finalReport && finalReport.isActive) {
-          // 로컬스토리지에서 기존 데이터 확인
-          const existingData = localStorage.getItem('final_report_data');
-          
-          if (existingData) {
-            try {
-              const storedData = JSON.parse(existingData);
-              const storedReportId = storedData.report_id;
-              const restoredReportId = finalReport.report_id;
-              
-              if (storedReportId === restoredReportId) {
-                console.log('✅ 동일한 report_id, final_report 복원 생략');
-              } else {
-                console.log('✅ 다른 report_id, final_report 복원 실행');
-                this.dispatchToAllComponents(finalReport);
-              }
-            } catch (error) {
-              console.error('❌ 기존 데이터 파싱 실패:', error);
-              // 파싱 실패 시 복원 실행
-              this.dispatchToAllComponents(finalReport);
-            }
-          } else {
-            // 기존 데이터가 없으면 복원 실행
-            console.log('✅ 기존 데이터 없음, final_report 복원 실행');
-            this.dispatchToAllComponents(finalReport);
-          }
-        } else {
-          console.log('❌ final_report 알림 없음 또는 비활성');
-        }
-      }
-    },
-    
-    // 특정 알림 제거
-    clearNotification(type) {
-      console.log(`🗑️ 알림 제거: ${type}`);
-      if (this.storedNotifications[type]) {
-        delete this.storedNotifications[type];
-        // localStorage에서도 제거
-        localStorage.setItem('notifications', JSON.stringify(this.storedNotifications));
-        console.log(`✅ ${type} 알림 제거 완료 (localStorage 포함)`);
-      } else {
-        console.log(`❌ ${type} 알림이 존재하지 않음`);
-      }
-    },
-    
-    // 알림 상태 확인 (전역 함수)
-    checkNotificationStatus(page) {
-      console.log('🔍 알림 상태 확인:', page);
-      
-      if (page === 'study') {
-        const availableNotification = this.storedNotifications['diary_available'];
-        const unavailableNotification = this.storedNotifications['diary_unavailable'];
-        
-        return {
-          hasAvailable: availableNotification && availableNotification.isActive,
-          hasUnavailable: unavailableNotification && unavailableNotification.isActive,
-          hasAnyNotification: (availableNotification && availableNotification.isActive) || 
-                             (unavailableNotification && unavailableNotification.isActive)
-        };
-      }
-      
-      if (page === 'study_encourage') {
-        const encourageAvailableNotification = this.storedNotifications['encourage_available'];
-        const encourageUnavailableNotification = this.storedNotifications['encourage_unavailable'];
-      
-        return {
-          hasEncourage: encourageAvailableNotification && encourageAvailableNotification.isActive,
-          hasUnavailable: encourageUnavailableNotification && encourageUnavailableNotification.isActive,
-          hasAnyNotification: (encourageAvailableNotification && encourageAvailableNotification.isActive) || 
-                             (encourageUnavailableNotification && encourageUnavailableNotification.isActive)
-        };
-      }
-      
-      if (page === 'study_chart') {
-        const sevenDayReportNotification = this.storedNotifications['seven_day_report'];
-        
-        return {
-          hasAnyNotification: sevenDayReportNotification && sevenDayReportNotification.isActive
-        };
-      }
-    }
-  };
-
-
-
-
+  window.globalNotificationManager = window.createNotificationManager();
 
   // final_report 알림 리스너 등록 (한 번만)
   function bindFinalReportListenerOnce() {
@@ -426,6 +177,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 전역 알림 관리자 초기화 (localStorage에서 복원)
   window.globalNotificationManager.initializeFromStorage();
+  window.studyState.refresh();
 
   // final_report 리스너 한 번만 등록
   bindFinalReportListenerOnce();
@@ -469,14 +221,10 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(html => {
         mainContent.innerHTML = html;
         
-        // section.js 로딩 완료 대기 후 알림 복원
-        setTimeout(() => {
+        // 모듈 준비 뒤 상태를 복원한다. 타이머 속도에 의존하지 않는다.
+        import('/static/js/components/study/section.js').then(() => {
           window.globalNotificationManager.restoreNotifications('study');
-        }, 200);
-
-        
-        // study/section.js 로드 (section.js에서 자동으로 알림 상태 체크)
-        import('/static/js/components/study/section.js');
+        });
       });
     
     // CSS 동적 로드 (이미 링크되어 있지 않으면)
@@ -861,4 +609,4 @@ document.addEventListener('DOMContentLoaded', function() {
   window.switchToDiaryGenerateTab = switchToDiaryGenerateTab;
   window.switchToEncourageTab = switchToEncourageTab;
   window.switchToSevenChartTab = switchToSevenChartTab;
-}); 
+});

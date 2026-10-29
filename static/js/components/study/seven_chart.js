@@ -6,44 +6,79 @@ if (typeof Chart === 'undefined') {
   console.error('❌ Chart.js 라이브러리가 로드되지 않았습니다.');
 }
 
-// 서버 API 호출 - 7일 리포트 데이터 가져오기
-async function fetchSevenDayReportData(analysisId) {
-  try {
-    console.log('🔄 7일 리포트 데이터 요청 시작:', analysisId);
-    
-    const response = await fetch(`/study/seven-day-report/${analysisId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      console.log('✅ 7일 리포트 데이터 수신: ID', analysisId);
-      console.log('📊 diary_analyses 개수:', data.diary_analyses.length);
-      
-      // 로컬스토리지에 저장 (analysis_id, 날짜 정보 포함)
-      const dataWithDates = {
-        ...data,
-        analysis_id: analysisId, // analysis_id 추가
-        week_start_date: data.weekly_analysis.start_date || null,
-        week_end_date: data.weekly_analysis.end_date || null
-      };
-      localStorage.setItem('seven_day_report_data', JSON.stringify(dataWithDates));
-      
-      // 차트 렌더링
-      renderSevenDayCharts(data);
-      
-      // 로딩 완료 알림 서버에 전송
-      notifyChartLoadingComplete(analysisId);
-    } else {
-      console.error('❌ 7일 리포트 데이터 요청 실패:', response.status);
-    }
-  } catch (error) {
-    console.error('❌ 7일 리포트 데이터 가져오기 실패');
+let chartRequest = null;
+let lastRestoredChart = null;
+
+function showChartRestoreStatus(message, retry = false) {
+  const root = document.querySelector('.seven-chart-container');
+  if (!root) return;
+  let status = document.getElementById('chart-restore-status');
+  if (!status) {
+    status = document.createElement('div');
+    status.id = 'chart-restore-status';
+    status.setAttribute('role', 'status');
+    root.prepend(status);
   }
+  status.replaceChildren();
+  status.textContent = message;
+  status.hidden = !message;
+  if (retry) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '다시 불러오기';
+    button.onclick = () => window.studyState.refresh(true);
+    status.appendChild(button);
+  }
+}
+
+async function fetchSevenDayReportData(analysisId) {
+  const canvas = document.getElementById('emotionTrendChart');
+  if (!canvas) return;
+  const token = localStorage.getItem('access_token');
+  const key = `${localStorage.getItem('user_id')}|${analysisId}`;
+  if (lastRestoredChart?.key === key && lastRestoredChart.canvas === canvas && lastRestoredChart.token === token) return;
+  if (chartRequest?.key === key && chartRequest.token === token) return chartRequest.promise;
+  showChartRestoreStatus('저장된 주간 분석을 불러오고 있습니다.');
+  const promise = (async () => {
+    try {
+      const response = await fetch(`/study/seven-day-report/${analysisId}`, {
+        headers:{Authorization:`Bearer ${token}`}, cache:'no-store'
+      });
+      if (!response.ok) throw new Error('weekly_unavailable');
+      const data = await response.json();
+      if (data.weekly_analysis?.id !== analysisId) throw new Error('weekly_id_mismatch');
+      if (localStorage.getItem('access_token') !== token ||
+          window.studyState.current()?.weekly.analysis_id !== analysisId ||
+          document.getElementById('emotionTrendChart') !== canvas) return;
+      localStorage.setItem('seven_day_report_data', JSON.stringify({...data, analysis_id:analysisId,
+        week_start_date:data.weekly_analysis.start_date, week_end_date:data.weekly_analysis.end_date}));
+      localStorage.setItem('seven_day_report_owner', localStorage.getItem('user_id'));
+      renderSevenDayCharts(data);
+      lastRestoredChart = {key, canvas, token};
+      showChartRestoreStatus('');
+      // 실제 렌더 실패의 완료 판단은 다음 M13 묶음에서 다룬다.
+      notifyChartLoadingComplete(analysisId);
+    } catch (_) {
+      if (localStorage.getItem('access_token') === token && document.getElementById('emotionTrendChart') === canvas) {
+        showChartRestoreStatus('주간 분석을 불러오지 못했습니다.', true);
+      }
+    } finally {
+      if (chartRequest?.key === key && chartRequest.token === token) chartRequest = null;
+    }
+  })();
+  chartRequest = {key, token, promise};
+  return promise;
+}
+
+async function syncSevenChart(status) {
+  if (!document.getElementById('emotionTrendChart') || !status) return;
+  if (status.weekly.state === 'ready') return fetchSevenDayReportData(status.weekly.analysis_id);
+  lastRestoredChart = null;
+  localStorage.removeItem('seven_day_report_data');
+  localStorage.removeItem('seven_day_report_owner');
+  if (typeof Chart !== 'undefined') destroyExistingCharts();
+  showChartRestoreStatus(status.weekly.state === 'pending' ?
+    '주간 분석 생성을 기다리고 있습니다.' : '아직 주간 분석에 필요한 일일 분석이 부족합니다.');
 }
 
 // 로딩 완료 알림 - 서버에 전송
@@ -473,54 +508,18 @@ function renderComprehensiveAssessment(data) {
 
 
 
-// 전역 리스너 등록 (한 번만)
+// 화면 진입·알림·재접속 모두 서버가 알려 준 최신 결과를 사용한다.
 function bindSevenChartListenersOnce() {
   if (window.__sevenChartListenersBound) return;
   window.__sevenChartListenersBound = true;
-  
-  console.log('📊 seven_chart 리스너 등록됨');
-  
-  // seven day report 알림 리스너
-  document.addEventListener('seven_day_report', function(event) {
-    const data = event.detail;
-    console.log('📊 seven day report 알림 수신: ID', data.analysis_id);
-    
-    // 서버에서 데이터 가져오기
-    fetchSevenDayReportData(data.analysis_id);
-  });
+  document.addEventListener('seven_day_report', () => window.studyState.refresh());
+  document.addEventListener('study_state_updated', event => syncSevenChart(event.detail));
+  document.addEventListener('study_state_error', () => showChartRestoreStatus('주간 분석 상태를 불러오지 못했습니다.', true));
 }
 
-// 초기화 함수 - 탭 진입 시 호출
-window.initSevenChartUI = function() {
-  bindSevenChartListenersOnce();  // 리스너 보장
-  
-  console.log('📊 seven_chart UI 초기화 시작');
-  
-
-  
-  // 기존 데이터가 있으면 차트 렌더링
-  const existingData = localStorage.getItem('seven_day_report_data');
-  if (existingData) {
-    try {
-      const data = JSON.parse(existingData);
-      console.log('📊 기존 데이터 발견, 차트 렌더링');
-      renderSevenDayCharts(data);
-    } catch (error) {
-      console.error('❌ 기존 데이터 파싱 실패');
-    }
-  } else {
-    // 기존 데이터가 없으면 로딩 상태 유지 (다른 영역들과 동일)
-    console.log('📊 기존 차트 데이터 없음, 로딩 상태 유지');
-    // HTML의 기본 로딩 메시지가 그대로 표시됨
-  }
-  
-  // WebSocket 알림 상태 복원
-  if (window.globalNotificationManager) {
-    console.log('📤 seven_chart 서브탭 - WebSocket 알림 상태 복원');
-    window.globalNotificationManager.restoreNotifications('study');
-  }
-  
-  console.log('✅ seven_chart UI 초기화 완료');
+window.initSevenChartUI = async function() {
+  bindSevenChartListenersOnce();
+  showChartRestoreStatus('저장된 주간 분석을 확인하고 있습니다.');
+  const status = await window.studyState.refresh();
+  return syncSevenChart(status);
 };
-
-console.log('✅ seven_chart.js 초기화 완료');

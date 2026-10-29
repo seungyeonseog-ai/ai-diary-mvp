@@ -14,148 +14,150 @@ function typewriterEffect(text, element) {
   })();
 }
 
-function renderEncourageFromLocalStorage() {
-  const messageElement = document.getElementById('encourage-message');
-  const content = localStorage.getItem('encourage_content');
-  const timestamp = localStorage.getItem('encourage_timestamp');
+let lastLetter = null;
+let letterRequest = null;
+const letterReasons = {
+  insufficient:'오늘 응원 편지를 만들기에는 대화가 부족합니다.',
+  waiting_time:'응원 편지는 오전 10시 이후 생성됩니다.',
+  pending:'응원 편지를 준비하고 있습니다. 잠시 후 다시 확인해 주세요.',
+  loading:'오늘의 응원 편지를 확인하고 있습니다.',
+  error:'응원 편지를 불러오지 못했습니다. 다시 불러오기를 눌러 주세요.'
+};
 
-  if (content && timestamp && messageElement) {
-    messageElement.textContent = content;
-    messageElement.style.whiteSpace = 'pre-wrap';
-    messageElement.style.display = 'block';
-    console.log('✅ 로컬스토리지에서 응원 메시지 렌더링 완료');
+function isToday(ts) {
+  if (!ts || Number.isNaN(new Date(ts).getTime())) return false;
+  const date = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Seoul',
+    year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ts));
+  const today = window.studyState?.today() || new Intl.DateTimeFormat('en-CA', {
+    timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  return date === today;
+}
+
+function clearLetterCache() {
+  for (const key of ['encourage_content','encourage_timestamp','encourage_date','encourage_result_id','encourage_owner']) {
+    localStorage.removeItem(key);
   }
 }
 
-// ✅ 추가: 오늘 날짜 비교(로컬 타임존 기준)
-function isToday(ts) {
-  if (!ts) return false;
-  const d1 = new Date(ts);
-  const d2 = new Date();
-  const toYMD = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  return toYMD(d1) === toYMD(d2);
+function renderEncourageFromLocalStorage() {
+  const element = document.getElementById('encourage-message');
+  if (!element) return;
+  const content = localStorage.getItem('encourage_content');
+  const ts = localStorage.getItem('encourage_timestamp');
+  const owner = localStorage.getItem('encourage_owner');
+  if (!isToday(ts) || (owner && owner !== localStorage.getItem('user_id'))) {
+    element.textContent = '';
+    clearLetterCache();
+    return;
+  }
+  element.textContent = content || '';
+  element.style.whiteSpace = 'pre-wrap';
+  element.style.display = 'block';
 }
 
-// ✅ 전역 1회 바인딩 가드
-window.__encourageListenersBound = window.__encourageListenersBound || false;
-
-// ✅ 클릭 처리(위임)
-async function handleEncourageClick() {
+function showLetterState(state) {
   const btn = document.getElementById('encourage-btn');
   const msg = document.getElementById('encourage-message');
-  if (!btn) return;
+  if (!btn || !msg) return;
+  const active = state === 'ready' || state === 'error';
+  btn.classList.toggle('disabled', !active);
+  btn.classList.toggle('active', active);
+  btn.setAttribute('aria-disabled', String(!active));
+  btn.setAttribute('type', 'button');
+  btn.dataset.state = state;
+  btn.textContent = state === 'ready' ? '응원 편지 다시 보기' : state === 'error' ? '다시 불러오기' : '응원 메시지 받기';
+  if (state !== 'ready') {
+    msg.textContent = letterReasons[state] || letterReasons.insufficient;
+    delete msg.dataset.resultKey;
+  }
+}
 
-  // 비활성 상태이면 안내만
-  if (btn.classList.contains('disabled') || btn.getAttribute('aria-disabled') === 'true') {
-    // ✅ 변경: 로컬스토리지에 "오늘 생성한" 메시지가 있으면 해당 문구로 안내
-    const content = localStorage.getItem('encourage_content');
-    const ts = localStorage.getItem('encourage_timestamp');
-    const alreadyToday = content && ts && isToday(ts);
-
-    const show = window.popupManager
-      ? (m,t) => window.popupManager.show(m, t)
-      : (m) => alert(m);
-
-    if (alreadyToday) {
-      show("오늘 생성한 응원메세지가 있습니다.", "안내");
-    } else {
-      show("오늘 응원 메시지 생성하기엔 채팅이 부족합니다.", "안내");
+async function syncEncouragement(status) {
+  const element = document.getElementById('encourage-message');
+  if (!element || !status || String(status.user_id) !== localStorage.getItem('user_id')) return;
+  const letter = status.encouragement;
+  if (letter.state !== 'ready') {
+    lastLetter = null;
+    clearLetterCache();
+    showLetterState(letter.state);
+    return;
+  }
+  const token = localStorage.getItem('access_token');
+  const key = `${status.user_id}|${status.server_date}|${letter.id}`;
+  if (lastLetter?.key === key && lastLetter.token === token) {
+    showLetterState('ready');
+    if (element.dataset.resultKey !== key) {
+      element.textContent = lastLetter.data.encourage_content;
+      element.style.whiteSpace = 'pre-wrap';
+      element.dataset.resultKey = key;
     }
     return;
   }
-
-  try {
-    const res = await fetch('/study/encourage', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+  if (letterRequest?.key === key && letterRequest.token === token) return letterRequest.promise;
+  showLetterState('loading');
+  const promise = (async () => {
+    try {
+      const response = await fetch('/study/encourage', {headers:{Authorization:`Bearer ${token}`}, cache:'no-store'});
+      if (!response.ok) throw new Error('letter_unavailable');
+      const data = await response.json();
+      if (localStorage.getItem('access_token') !== token || String(status.user_id) !== localStorage.getItem('user_id')) return;
+      const current = window.studyState.current();
+      if (data.date !== window.studyState.today() || data.date !== current?.server_date || data.id !== current?.encouragement.id) {
+        window.studyState.refresh(true);
+        return;
       }
-    });
-    if (!res.ok) {
-      console.error('응원 메시지 조회 실패');
-      return;
+      lastLetter = {key, data, token};
+      localStorage.setItem('encourage_content', data.encourage_content);
+      localStorage.setItem('encourage_timestamp', data.timestamp);
+      localStorage.setItem('encourage_date', data.date);
+      localStorage.setItem('encourage_result_id', String(data.id));
+      localStorage.setItem('encourage_owner', String(status.user_id));
+      const currentElement = document.getElementById('encourage-message');
+      if (currentElement) {
+        currentElement.textContent = data.encourage_content;
+        currentElement.style.whiteSpace = 'pre-wrap';
+        currentElement.dataset.resultKey = key;
+        showLetterState('ready');
+      }
+      window.globalNotificationManager?.updateNotification('encourage_unavailable', {
+        type:'encourage_unavailable', date:data.date, result_id:data.id});
+    } catch (_) {
+      if (localStorage.getItem('access_token') === token) showLetterState('error');
+    } finally {
+      if (letterRequest?.key === key && letterRequest.token === token) letterRequest = null;
     }
-    const data = await res.json();
-    localStorage.setItem('encourage_content', data.encourage_content);
-    localStorage.setItem('encourage_timestamp', new Date().toISOString());
-
-    const messageEl = document.getElementById('encourage-message');
-    typewriterEffect(data.encourage_content, messageEl);
-  } catch (e) {
-    console.error('응원 메시지 요청 오류:', e);
-  }
+  })();
+  letterRequest = {key, promise, token};
+  return promise;
 }
 
-// 전역으로 노출
+async function handleEncourageClick() {
+  const status = await window.studyState.refresh();
+  await syncEncouragement(status);
+  if (status?.encouragement.state === 'ready' && lastLetter) {
+    typewriterEffect(lastLetter.data.encourage_content, document.getElementById('encourage-message'));
+  }
+}
 window.handleEncourageClick = handleEncourageClick;
 
-// ✅ 전역 리스너를 "한 번만" 등록 + 항상 현재 DOM 재조회
 function bindEncourageGlobalListenersOnce() {
   if (window.__encourageListenersBound) return;
   window.__encourageListenersBound = true;
-
-  console.log('[encourage] global listeners bound');
-
-  // (캡처 단계) 문서 레벨 클릭 위임: stopPropagation에도 안전
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('#encourage-btn');
-    if (!btn) return;
-    console.log('[encourage] (capture) click on #encourage-btn');
-    handleEncourageClick();
-  }, { capture: true });
-
-  // 알림 도착: 항상 최신 DOM을 조회해 활성화
-  document.addEventListener('encourage_available', () => {
-    const btn = document.getElementById('encourage-btn');
-    if (!btn) return;
-    btn.classList.remove('disabled');
-    btn.classList.add('active');
-    btn.setAttribute('aria-disabled', 'false'); // 접근성
-  });
-
-  // 알림 불가: 비활성 + 저장된 메시지 렌더
-  document.addEventListener('encourage_unavailable', () => {
-    const btn = document.getElementById('encourage-btn');
-    if (!btn) return;
-    btn.classList.remove('active');
-    btn.classList.add('disabled');
-    btn.setAttribute('aria-disabled', 'true');
-    renderEncourageFromLocalStorage();
+  document.addEventListener('click', event => {
+    if (event.target.closest('#encourage-btn')) handleEncourageClick();
+  }, {capture:true});
+  document.addEventListener('study_state_updated', event => syncEncouragement(event.detail));
+  document.addEventListener('study_state_error', () => showLetterState('error'));
+  document.addEventListener('diary_reset', () => {
+    lastLetter = null;
+    clearLetterCache();
+    showLetterState('loading');
   });
 }
 
-// ✅ 탭 진입 시: 전역 리스너 보장 + 현재 상태 동기화
-window.initEncourageUI = function() {
+window.initEncourageUI = async function() {
   bindEncourageGlobalListenersOnce();
-
-  const status = window.globalNotificationManager?.checkNotificationStatus('study_encourage') || {};
-  const btn = document.getElementById('encourage-btn');
-  if (btn) {
-    if (status.hasAnyNotification) {
-      btn.classList.remove('disabled');
-      btn.classList.add('active');
-      btn.setAttribute('aria-disabled', 'false');
-    } else {
-      btn.classList.remove('active');
-      btn.classList.add('disabled');
-      btn.setAttribute('aria-disabled', 'true');
-    }
-
-    // (보강) 직접 바인딩 1회 — 혹시 위임이 막힐 때 대비
-    // if (!btn.dataset.encourageBound) {
-    //   btn.addEventListener('click', () => {
-    //     console.log('[encourage] (direct) click on #encourage-btn');
-    //     handleEncourageClick();
-    //   });
-    //   btn.dataset.encourageBound = '1';
-    // }
-
-    // 버튼이 폼 안에 있을 수 있으니 안전하게
-    if (!btn.hasAttribute('type')) btn.setAttribute('type', 'button');
-  }
-
-  renderEncourageFromLocalStorage();
+  showLetterState('loading');
+  const status = await window.studyState.refresh();
+  return syncEncouragement(status);
 };
-
-// ❌ 최상단 자동 호출(과거 setupEncourageEventListeners)은 더 이상 없음

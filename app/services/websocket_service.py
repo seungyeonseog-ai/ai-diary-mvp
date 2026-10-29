@@ -118,6 +118,7 @@ class WebSocketService:
                             elif data.get('type') == 'diary_reset':
                                 await self.send_notification(websocket, {
                                     "type": "diary_reset",
+                                    "date": data.get("date"),
                                     "target": "global-notification-manager",
                                     "message": data.get("message", "새로운 하루가 시작되었습니다!"),
                                     "priority": data.get("priority", "high")
@@ -186,6 +187,8 @@ class WebSocketService:
                             if data.get('type') == 'encourage_unavailable':
                                 await self.send_notification(websocket, {
                                     "type": "encourage_unavailable",
+                                    "date": data.get("date"),
+                                    "result_id": data.get("result_id"),
                                     "target": "letter-overlay-glow",
                                     "message": "응원격려 확인함"
                                 }, user_id)
@@ -193,6 +196,8 @@ class WebSocketService:
                                 # 기존 encourage_available 처리
                                 await self.send_notification(websocket, {
                                     "type": "encourage_available",
+                                    "date": data.get("date"),
+                                    "result_id": data.get("result_id"),
                                     "target": "letter-overlay-glow",
                                     "message": "오늘 하루도 수고했어요, 당신에게 편지가 왔어요"
                                 }, user_id)

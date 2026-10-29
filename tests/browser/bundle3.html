@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><title>3묶음 실제 화면 검증 — 격리 앱</title>
+<style>body{font:15px/1.5 sans-serif;background:#f8f6f3;margin:16px;color:#333}
+ button{padding:8px;margin:4px}iframe{width:100%;height:1000px;border:1px solid #ddd;background:white}
+ #result{white-space:pre-wrap;font-weight:bold;color:#176746}</style>
+<h1>3묶음 복원·날짜·알림 검증</h1>
+<p>실제 앱 화면·JS·API / 합성 계정·메모리 DB / 운영 DB·Redis·유료 AI 사용 없음</p>
+<button id="reload">캐시 없이 다시 로그인</button>
+<button data-mode="ready">오늘 결과 복원</button><button data-mode="yesterday">어제 편지만 존재</button>
+<button data-mode="nextday">한국 자정 이후</button><button data-mode="pending">생성 대기</button>
+<button data-mode="error">상태 조회 장애</button><button data-mode="reconnect">알림 없이 결과 교체·재접속</button>
+<p id="result" role="status">준비 중</p><div id="app-host"></div>
+<script>
+let frame;
+async function login() {
+ const session=await (await fetch('/test/session')).json();
+ localStorage.clear();
+ localStorage.setItem('access_token',session.access_token);
+ localStorage.setItem('user_id',String(session.user_id));
+ localStorage.setItem('nickname','합성 검증 계정');
+ if(frame)frame.remove();
+ frame=document.createElement('iframe');frame.title='실제 앱 격리 검증';frame.src='/test/app';
+ document.getElementById('app-host').appendChild(frame);
+}
+document.getElementById('reload').onclick=login;
+document.querySelectorAll('[data-mode]').forEach(button=>button.onclick=async()=>{
+ const mode=button.dataset.mode;
+ const result=await (await fetch('/test/scenario/'+mode,{method:'POST'})).json();
+ document.getElementById('result').textContent='검사 상태: '+mode+' / 한국 날짜: '+result.server_date;
+ if(mode!=='reconnect')frame.contentWindow.studyState.refresh(true);
+});
+setInterval(()=>{
+ if(!frame?.contentWindow.studyState)return;
+ const state=frame.contentWindow.studyState.current();
+ if(!state)return;
+ const doc=frame.contentDocument;
+ const letter=doc.getElementById('encourage-message');
+ const chart=doc.getElementById('emotionTrendChart');
+ const graphs=chart&&frame.contentWindow.Chart ? ['emotionTrendChart','radarChart'].filter(id=>frame.contentWindow.Chart.getChart(id)).length:0;
+ document.getElementById('result').textContent=
+  '서버 한국 날짜: '+state.server_date+' / 응원: '+state.encouragement.state+' / 주간 ID: '+state.weekly.analysis_id+
+  '\n화면: '+(letter?'응원 편지':chart?'주간 차트':'탐색')+' / 실제 차트: '+graphs+'개 / 편지 내부 HTML 이미지: '+
+  (letter?letter.querySelectorAll('img').length:0)+'개';
+},500);
+login();
+</script></html>

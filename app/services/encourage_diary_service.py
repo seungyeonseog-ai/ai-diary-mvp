@@ -93,7 +93,9 @@ class EncourageDiaryService:
                 message = {
                     "type": "encourage_availalbe",
                     "target": "letter",
-                    "message": "오늘 하루도 수고했어요, 당신에게 편지가 왔어요"
+                    "message": "오늘 하루도 수고했어요, 당신에게 편지가 왔어요",
+                    "date": encouragement.timestamp.date().isoformat(),
+                    "result_id": encouragement.encouragement_id
                 }
                 
                 channel = f"user_{user_id}_encourage"

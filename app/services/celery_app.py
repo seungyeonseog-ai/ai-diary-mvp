@@ -335,6 +335,7 @@ def daily_reset_notifications():
                 channel = f"user_{user.id}_diary"
                 reset_message = {
                     "type": "diary_reset",
+                    "date": get_kst_now().date().isoformat(),
                     "user_id": user.id,
                     "message": "새로운 하루가 시작되었습니다!",
                     "priority": "high"

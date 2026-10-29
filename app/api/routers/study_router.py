@@ -1,4 +1,4 @@
-from app.utils.time_utils import get_kst_now
+from app.utils.time_utils import get_kst_now, KST
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.api.dependencies.auth_dependencies import get_current_user
@@ -17,6 +17,8 @@ import logging
 from app.config.settings import settings
 from sqlalchemy import func
 from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository, SourceResolutionError
+
+from app.services.study_state_service import study_status, today_encouragement, latest_weekly
 
 router = APIRouter(prefix="/study", tags=["study"])
 logger = logging.getLogger(__name__)
@@ -293,136 +295,69 @@ async def get_diary_detail(
         raise HTTPException(status_code=500, detail=f"일기 조회 실패: {str(e)}")
 
 
-@router.get("/encourage/check-condition")
-async def check_encourage_condition(
-    current_user: User = Depends(get_current_user)
-):
+@router.get("/status")
+async def get_study_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
-        # 오늘 응원 메시지 존재 여부 확인
-        today = get_kst_now().date()
-        print(f"🔍 [DEBUG] today: {today}, type: {type(today)}")
-        
-        db = next(get_db())
-        
-        try:
-            # 먼저 모든 응원 메시지 조회해서 디버깅
-            all_encouragements = db.query(EncouragementReport).filter(
-                EncouragementReport.user_id == current_user.id
-            ).all()
-            
-            print(f"🔍 [DEBUG] 사용자의 모든 응원 메시지 수: {len(all_encouragements)}")
-            for enc in all_encouragements:
-                print(f"🔍 [DEBUG] 응원 메시지 ID: {enc.encouragement_id}, timestamp: {enc.timestamp}, date: {enc.timestamp.date() if enc.timestamp else None}")
-            
-            # 실제 쿼리 실행
-            existing_encouragement = db.query(EncouragementReport).filter(
-                EncouragementReport.user_id == current_user.id,
-                func.date(EncouragementReport.timestamp) == today
-            ).first()
-            
-            print(f"🔍 [DEBUG] 오늘 응원 메시지 존재 여부: {existing_encouragement is not None}")
-            
-            if existing_encouragement:
-                return {
-                    "available": False,
-                    "reason": "오늘의 응원 메시지가 이미 존재합니다."
-                }
-            
-            # 응원 메시지가 없으면 채팅 부족 메시지 반환
-            return {
-                "available": False,
-                "reason": "오늘 응원 메시지 생성하기엔 채팅이 부족합니다."
-            }
-            
-        except Exception as e:
-            print(f"❌ [DEBUG] 데이터베이스 쿼리 에러: {str(e)}")
-            print(f"❌ [DEBUG] 에러 타입: {type(e).__name__}")
-            import traceback
-            print(f"❌ [DEBUG] 스택 트레이스: {traceback.format_exc()}")
-            db.rollback()
-            raise e
-        finally:
-            db.close()
-            
+        return study_status(db, current_user.id)
     except Exception as e:
-        print(f"❌ [DEBUG] 전체 에러: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("study_status_failed user_id=%s error_type=%s", current_user.id, type(e).__name__)
+        raise HTTPException(status_code=500, detail="서재 상태를 불러오지 못했습니다.") from None
 
 
-# 오늘의 응원 메시지 조회 라우터
+@router.get("/encourage/check-condition")
+async def check_encourage_condition(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    status = await get_study_status(current_user, db)
+    letter = status['encouragement']
+    reasons = {
+        'ready': '오늘의 응원 편지를 확인할 수 있습니다.',
+        'pending': '응원 편지 생성을 기다리고 있습니다.',
+        'waiting_time': '응원 편지는 오전 10시 이후 생성됩니다.',
+        'insufficient': '오늘 응원 메시지 생성하기엔 채팅이 부족합니다.'
+    }
+    return {**letter, 'available': letter['state'] == 'ready',
+            'server_date': status['server_date'], 'reason': reasons[letter['state']]}
+
+
 @router.get("/encourage")
-async def get_today_encouragement(
-    current_user: User = Depends(get_current_user)
-):
+async def get_today_encouragement(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
-        # 오늘 날짜로 생성된 응원 메시지 조회
-        today = get_kst_now().date()
-        print(f"🔍 [DEBUG] 오늘 날짜: {today}")
-        
-        db = next(get_db())
-        
+        now = get_kst_now()
+        letter = today_encouragement(db, current_user.id, now)
+        if letter is None:
+            raise HTTPException(status_code=404, detail="오늘의 응원 메시지가 없습니다.")
+        response = {'encourage_content': letter.encourage_content,
+                    'id': letter.encouragement_id, 'date': letter.timestamp.date().isoformat(),
+                    'timestamp': letter.timestamp.replace(tzinfo=KST).isoformat(),
+                    'server_date': now.date().isoformat()}
         try:
-            # 오늘 날짜로 생성된 응원 메시지 조회
-            today_encouragement = db.query(EncouragementReport).filter(
-                EncouragementReport.user_id == current_user.id,
-                func.date(EncouragementReport.timestamp) == today
-            ).first()
-            
-            print(f"🔍 [DEBUG] 오늘 응원 메시지 존재 여부: {today_encouragement is not None}")
-            
-            if not today_encouragement:
-                raise HTTPException(
-                    status_code=404, 
-                    detail="오늘의 응원 메시지가 없습니다."
-                )
-            
-            # encourage_content만 추출해서 반환
-            response_data = {
-                "encourage_content": today_encouragement.encourage_content
-            }
-            
-            # Redis에 encourage_unavailable 메시지 발행
-            try:
-                redis_client = redis.Redis(
-                    host=settings.redis_host,
-                    port=settings.redis_port,
-                    db=settings.redis_db
-                )
-                
-                message = {
-                    "type": "encourage_unavailable",
-                    "target": "letter-overlay-glow",
-                    "message": "응원격려 확인함"
-                }
-                
-                channel = f"user_{current_user.id}_encourage"
-                message_json = json.dumps(message)
-                
-                print(f"📤 [DEBUG] Redis 발행 시도: channel={channel}, message={message_json}")
-                result = redis_client.publish(channel, message_json)
-                
-            except Exception as e:
-                print(f"❌ [ERROR] Redis 발행 실패: {e}")
-                # Redis 발행 실패는 치명적이지 않으므로 예외를 다시 발생시키지 않음
-            
-            return response_data
-            
-        except HTTPException:
-            # HTTPException은 그대로 전달
-            raise
+            client = redis.Redis(host=settings.redis_host, port=settings.redis_port, db=settings.redis_db,
+                                 socket_connect_timeout=3, socket_timeout=3)
+            client.publish(f"user_{current_user.id}_encourage", json.dumps({
+                'type': 'encourage_unavailable', 'target': 'letter-overlay-glow',
+                'message': '응원 편지 확인함', 'date': response['date'], 'result_id': letter.encouragement_id
+            }))
         except Exception as e:
-            print(f"❌ [DEBUG] 데이터베이스 쿼리 에러: {str(e)}")
-            db.rollback()
-            raise HTTPException(status_code=500, detail=f"응원 메시지 조회 실패: {str(e)}")
-        finally:
-            db.close()
-            
+            logger.warning("encouragement_ack_failed user_id=%s error_type=%s", current_user.id, type(e).__name__)
+        return response
     except HTTPException:
-        # HTTPException은 그대로 전달
         raise
     except Exception as e:
-        print(f"❌ [DEBUG] 전체 에러: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"응원 메시지 조회 실패: {str(e)}")
+        logger.error("encouragement_read_failed user_id=%s error_type=%s", current_user.id, type(e).__name__)
+        raise HTTPException(status_code=500, detail="응원 편지를 불러오지 못했습니다.") from None
+
+
+@router.get("/weekly/latest")
+async def get_latest_weekly_report(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        report = latest_weekly(db, current_user.id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="아직 저장된 주간 분석이 없습니다.")
+        return await get_seven_day_report(report.analysis_id, current_user, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("weekly_latest_failed user_id=%s error_type=%s", current_user.id, type(e).__name__)
+        raise HTTPException(status_code=500, detail="주간 분석을 불러오지 못했습니다.") from None
 
 
 # 7일 감정 리포트 데이터 조회

@@ -236,7 +236,7 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(res => res.text())
       .then(html => {
         mainContent.innerHTML = html;
-        import('/static/js/components/chatting/section.js').then(() => {
+        import('/static/js/components/chatting/section.js?v=20261030-stream1').then(() => {
           if (window.initChattingSection) window.initChattingSection();
         });
       });
@@ -400,7 +400,7 @@ document.addEventListener('DOMContentLoaded', function() {
           .then(res => res.text())
           .then(html => {
             mainContent.innerHTML = html;
-            import('/static/js/components/chatting/section.js').then(() => {
+            import('/static/js/components/chatting/section.js?v=20261030-stream1').then(() => {
               if (window.initChattingSection) window.initChattingSection();
             });
           });

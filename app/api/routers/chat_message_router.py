@@ -64,6 +64,7 @@ logger = logging.getLogger(__name__)
 @router.post("/chat/response_stream")
 async def stream_response(
     data: ChatResponseInput,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -79,10 +80,19 @@ async def stream_response(
         # 프롬프트 구성
         prompt = build_chat_prompt(db, current_user.id, turn, session_id=session_id)
 
+        # 구형 화면은 일반 텍스트를 표시한다. SSE는 지원을 명시한 클라이언트에만 보낸다.
+        use_events = "text/event-stream" in request.headers.get("accept", "").lower()
+
         async def event_generator():
             accumulated = ""
             def frame(event, payload):
-                return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                if use_events:
+                    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                if event == "chunk":
+                    return payload["text"]
+                if event == "error":
+                    return "\n[Error] " + payload["message"]
+                return ""
             try:
                 # 스트리밍 청크 전송
                 async for chunk in stream_gpt_response(prompt):
@@ -112,7 +122,8 @@ async def stream_response(
                 yield frame("error", {"code": "save_failed", "message": "답변은 생성됐지만 저장하지 못했습니다. 대화 기록을 다시 확인해 주세요."})
                 return
 
-            yield frame("saved", {"turn": turn, "session_id": session_id})
+            if use_events:
+                yield frame("saved", {"turn": turn, "session_id": session_id})
 
             # 조건 체크 및 Redis 발행 (try 블록 밖으로)
             logger.info("🔍 save_gpt_response 완료, 조건 체크 시작")
@@ -152,7 +163,7 @@ async def stream_response(
             except Exception as check_err:
                 logger.error("diary_condition_failed error_type=%s", type(check_err).__name__)
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream", headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
+        return StreamingResponse(event_generator(), media_type="text/event-stream" if use_events else "text/plain", headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no", "Vary":"Accept"})
 
     except HTTPException:
         raise

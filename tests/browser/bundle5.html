@@ -4,11 +4,14 @@
 <button id="login">합성 계정 로그인·화면 초기화</button>
 <button data-mode="success">채팅 정상</button><button data-mode="generation_failure">채팅 생성 실패</button><button data-mode="save_failure">채팅 저장 실패</button>
 <button id="counts">미제공 요청 건수 확인</button><pre id="result">준비 중</pre><div id="host"></div>
+<button data-mode="gated_success">첫 청크 후 대기</button><button data-mode="gated_failure">첫 청크 후 생성 실패</button>
+<button id="release">다음 청크 허용</button><a href="/test/legacy-app">이전 클라이언트 화면</a><a href="/test/app">현재 클라이언트 화면</a>
 <script>
 let frame;
 async function login(){const session=await(await fetch('/test/session')).json();localStorage.clear();localStorage.setItem('access_token',session.access_token);localStorage.setItem('user_id','1');localStorage.setItem('nickname','합성 검증 계정');if(frame)frame.remove();frame=document.createElement('iframe');frame.title='실제 앱 격리 검증';frame.src='/test/app';document.getElementById('host').appendChild(frame)}
 document.getElementById('login').onclick=login;
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{await fetch('/test/chat-mode/'+b.dataset.mode,{method:'POST'});document.getElementById('result').textContent=b.textContent});
 document.getElementById('counts').onclick=async()=>document.getElementById('result').textContent=JSON.stringify(await(await fetch('/test/bundle5-observed')).json());
+document.getElementById('release').onclick=async()=>{await fetch('/test/stream-release',{method:'POST'});document.getElementById('result').textContent='후속 청크 허용됨'};
 login();
 </script></html>

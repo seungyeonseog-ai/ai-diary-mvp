@@ -40,7 +40,7 @@ class CoreTests(unittest.TestCase):
             with self.sessions() as db:yield db
         app.dependency_overrides[get_db]=isolated_db
         app.dependency_overrides[get_current_user]=lambda:User(id=self.uid)
-        self.app=app;self.client=TestClient(app)
+        self.app=app;self.client=TestClient(app,headers={'Accept':'text/event-stream'})
     def tearDown(self):
         self.client.close();self.engine.dispose();self.temp.cleanup()
     def stream(self,chunks=('합성 ','답변'),failure=False,save_error=False):
@@ -60,6 +60,35 @@ class CoreTests(unittest.TestCase):
     def test_chat_saves_before_terminal_success(self):
         frames=self.stream();self.assertEqual([x[0] for x in frames],['chunk','chunk','saved'])
         self.assertEqual(self.assistant_count(),1)
+    def test_legacy_chat_receives_text_without_sse_frames(self):
+        self.client.headers['Accept'] = '*/*'
+        async def synthetic(_):
+            yield '합성 '
+            yield '답변'
+        with patch.object(chat,'build_chat_prompt',return_value=[]),patch.object(chat,'stream_gpt_response',synthetic),patch.object(chat,'DiaryService') as diary:
+            diary.return_value.check_diary_conditions=AsyncMock(return_value={'available':False})
+            response=self.client.post('/chat/response_stream',json={'turn':1,'session_id':'s1'})
+        self.assertEqual(response.text,'합성 답변')
+        self.assertTrue(response.headers['content-type'].startswith('text/plain'))
+        self.assertEqual(response.headers['vary'],'Accept')
+        self.assertEqual(self.assistant_count(),1)
+    def test_stream_yields_chunks_before_generation_and_save_finish(self):
+        from starlette.requests import Request
+        from app.models.schemas.chat_schema import ChatResponseInput
+        async def run():
+            async def synthetic(_):
+                yield '첫 청크'
+                yield '둘째 청크'
+            with self.sessions() as db, patch.object(chat,'build_chat_prompt',return_value=[]),patch.object(chat,'stream_gpt_response',synthetic),patch.object(chat,'save_gpt_response') as save,patch.object(chat,'DiaryService') as diary:
+                diary.return_value.check_diary_conditions=AsyncMock(return_value={'available':False})
+                request=Request({'type':'http','headers':[(b'accept',b'text/event-stream')]})
+                response=await chat.stream_response(ChatResponseInput(turn=1,session_id='s1'),request,db,User(id=1))
+                stream=response.body_iterator
+                self.assertIn('첫 청크',await anext(stream));save.assert_not_called()
+                self.assertIn('둘째 청크',await anext(stream));save.assert_not_called()
+                self.assertIn('event: saved',await anext(stream));save.assert_called_once()
+                await stream.aclose()
+        asyncio.run(run())
     def test_chat_partial_failure_does_not_save(self):
         frames=self.stream(failure=True);self.assertEqual(frames[-1][1]['code'],'generation_failed');self.assertEqual(self.assistant_count(),0)
     def test_chat_empty_response_does_not_save(self):

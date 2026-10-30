@@ -54,7 +54,7 @@ async function sendMessage() {
     renderBubble('user', message);
     messages.push({role:'user', message});
     const response = await fetch('/chat/response_stream', {
-      method:'POST', headers, body:JSON.stringify({turn, session_id:sessionId})
+      method:'POST', headers:{...headers, Accept:'text/event-stream'}, body:JSON.stringify({turn, session_id:sessionId})
     });
     if (!current()) return;
     if (!response.ok) {

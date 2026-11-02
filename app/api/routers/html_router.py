@@ -1,8 +1,9 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Path
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi import APIRouter
+from fastapi.responses import RedirectResponse
 
 
 router = APIRouter()
@@ -27,6 +28,16 @@ async def login_page(request: Request):
 async def writing_page(request: Request):
     return templates.TemplateResponse("writing.html", {"request":request}, headers={"Cache-Control":"no-store"})
 
+
+@router.get('/library',response_class=HTMLResponse)
+def library_page(request:Request):
+    return templates.TemplateResponse('library.html',{'request':request,'active_tab':'library'},headers={'Cache-Control':'no-store'})
+
+
+@router.get('/diary/{diary_id}',response_class=HTMLResponse)
+def saved_diary_page(request:Request,diary_id:int=Path(...,ge=1)):
+    return templates.TemplateResponse('writing.html',{'request':request,'diary_id':diary_id,'active_tab':'library'},headers={'Cache-Control':'no-store'})
+
 @router.get("/register", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
@@ -36,6 +47,8 @@ async def login_page(request: Request):
 
 @router.get("/mypage_edit", response_class=HTMLResponse)
 async def mypage_edit(request: Request):
+    if request.query_params.get('tab')=='study' and request.query_params.get('legacy')!='1':
+        return RedirectResponse('/library',status_code=307)
     return templates.TemplateResponse("mypage_edit.html", {"request": request})
 
 @router.get("/chatroom", response_class=HTMLResponse)

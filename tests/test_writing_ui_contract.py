@@ -25,18 +25,20 @@ class PageContractTests(unittest.TestCase):
     def tearDown(self):self.client.close()
 
     def test_new_pages_are_fresh_and_legacy_page_is_retained(self):
-        for path,marker in [('/', 'enter-space'),('/space','lamp-submit'),('/login','login-error')]:
+        for path,marker in [('/', 'enter-space'),('/space','lamp-submit'),('/login','login-error'),('/library','books-older'),('/diary/1','diary-back')]:
             response=self.client.get(path)
             self.assertEqual(response.status_code,200)
             self.assertIn(marker,response.text)
-            self.assertIn('20261102-4a',response.text)
+            self.assertIn('20261102-5a',response.text)
             self.assertEqual(response.headers.get('cache-control'),'no-store')
             self.assertIn('<svg class="icon"',response.text)
-        self.assertIn('main-content',self.client.get('/mypage_edit?tab=study').text)
+        self.assertEqual(self.client.get('/mypage_edit?tab=study',follow_redirects=False).headers['location'],'/library')
+        self.assertIn('main-content',self.client.get('/mypage_edit?tab=study&legacy=1').text)
+        self.assertEqual(self.client.get('/diary/0').status_code,422)
 
     def test_asset_bytes_match_prepared_images(self):
         manifest=json.loads(Path('static/images/space/manifest.json').read_text(encoding='utf-8-sig'))
-        for name in ['lamp-default-v1.png','lamp-home-v1.png','lamp-writing-v1.png','account-avatar-v1.png']:
+        for name in manifest:
             response=self.client.get('/static/images/space/'+name)
             self.assertEqual(response.status_code,200)
             self.assertEqual(hashlib.sha256(response.content).hexdigest(),manifest[name]['sha256'])

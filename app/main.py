@@ -9,6 +9,7 @@ from app.api.routers.websocket_router import router as websocket_router
 from app.api.routers.study_router import router as study_router
 from app.api.routers.constellation import router as constellation_router
 from app.api.routers.writing_router import router as writing_router
+from app.api.routers.library_router import router as library_router
 from app.core.writing_migration import require_writing_schema
 import asyncio
 from contextlib import suppress
@@ -72,6 +73,7 @@ app.include_router(websocket_router)
 app.include_router(study_router)
 app.include_router(constellation_router)
 app.include_router(writing_router)
+app.include_router(library_router)
 
 
 @app.on_event("startup")

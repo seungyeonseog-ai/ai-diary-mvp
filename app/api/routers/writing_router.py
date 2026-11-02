@@ -95,7 +95,7 @@ def diary(diary_id: int, db: Session = Depends(get_db), user: User = Depends(get
     row = execute(service.owned, db, DiaryReport, diary_id, user.id)
     if row.state == "discarded":
         raise HTTPException(404, "일기를 찾을 수 없습니다.")
-    return {**service.diary_payload(row), "photos": [
+    return {**service.diary_payload(row), "server_date":get_kst_now().date().isoformat(), "photos": [
         {"id": p.id, "url": f"/writing/diaries/{diary_id}/photos/{p.id}"}
         for p in db.query(DiaryPhoto).filter_by(user_id=user.id, diary_id=diary_id).order_by(DiaryPhoto.created_at, DiaryPhoto.id)]}
 
@@ -160,8 +160,7 @@ def save(diary_id: int, data: VersionInput, db: Session = Depends(get_db), user:
 
 @router.delete("/diaries/{diary_id}")
 def discard_diary(diary_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    execute(service.discard_diary, db.get_bind(), user.id, diary_id)
-    return {"state": "discarded"}
+    return execute(service.discard_diary, db.get_bind(), user.id, diary_id)
 
 
 @router.get("/{writing_id}")

@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+(async()=>{
+ const context=vm.createContext({URL,URLSearchParams,Date,window:{addEventListener(){}},location:{origin:'http://127.0.0.1:8000'}});
+ const model=new vm.SourceTextModule(fs.readFileSync('static/js/space/library_model.js','utf8'),{context});await model.link(()=>{});await model.evaluate();const m=model.namespace;
+ assert.equal(m.calendarCells('2024-02').filter(Boolean).length,29);assert.equal(m.calendarCells('1900-02').filter(Boolean).length,28);assert.equal(m.calendarCells('0001-01').filter(Boolean).length,31);
+ assert.equal(m.calendarCells('2026-11')[0],'2026-11-01');assert.equal(m.shiftMonth('2026-01',-1),'2025-12');assert.equal(m.shiftMonth('2026-12',1),'2027-01');assert.equal(m.validMonth('0000-01'),false);
+ assert.equal(m.libraryState('?view=list&month=2027-01&page=-2','2026-11-02').month,'2026-11');assert.equal(m.libraryState('?page=9007199254740992','2026-11-02').page,1);
+ const state={view:'list',month:'2024-02',page:2};assert.equal(m.diaryURL(7,state),'/diary/7?return=%2Flibrary%3Fview%3Dlist%26month%3D2024-02%26page%3D2');
+ const points=m.emotionPoints({diary_analyses:[{date_str:'2026-11-03',scores:[.7]},{date_str:'2026-11-01',scores:[.2,.3]}]});assert.equal(points.length,2);assert.equal(points[0].date,'2026-11-01');assert.equal(points[0].value,.5);
+ assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2026-11-01',scores:['0.7']}]}));assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'bad',scores:[.7]}]}));
+ assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2026-02-30',scores:[.7]}]}));
+ const ui=new vm.SourceTextModule(fs.readFileSync('static/js/space/ui.js','utf8'),{context});await ui.link(()=>{});await ui.evaluate();const safe=ui.namespace.safeNext;
+ assert.equal(safe('//example.org/diary/1'),'/space');assert.equal(safe('javascript:alert(1)'),'/space');assert.equal(safe('/diary/0'),'/space');assert.equal(safe('/library?view=list'),'/library?view=list');assert.equal(safe('/diary/12?return=x'),'/diary/12?return=x');
+ console.log('PASS library: calendar leap/century/year1, month boundary, paging validation, return URL, real-date chart, strict numeric scores, safe login redirect');
+})().catch(error=>{console.error(error);process.exitCode=1});

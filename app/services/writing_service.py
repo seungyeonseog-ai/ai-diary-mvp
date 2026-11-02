@@ -280,14 +280,17 @@ def discard_diary(bind, user_id, diary_id):
     # 과거 일기도 폐기 가능하지만 새 작성 API는 오늘 날짜만 생성한다.
     with transaction(bind, user_id) as db:
         diary = owned(db, DiaryReport, diary_id, user_id)
+        result={"state":"discarded","date":diary.timestamp.date().isoformat(),
+                "can_rewrite_today":diary.timestamp.date()==get_kst_now().date()}
         if diary.state == "discarded":
-            return
+            return result
         writing = db.query(Writing).filter_by(user_id=user_id, diary_id=diary_id).first()
         if writing:
             writing.state, writing.closed_at = "discarded", get_kst_now()
         diary.state, diary.updated_at = "discarded", get_kst_now()
         diary.version += 1
         db.query(DiaryPhoto).filter_by(diary_id=diary.diary_id, user_id=user_id).delete()
+        return result
 
 
 def add_photo(bind, user_id, diary_id, version, client_id, media_type, content):

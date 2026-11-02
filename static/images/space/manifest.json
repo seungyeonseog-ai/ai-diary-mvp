@@ -1,18 +1,46 @@
 {
-  "lamp-home-v1.png": {
+  "account-avatar-v1.png": {
     "source": "approved UI asset 2026-11-02",
-    "sha256": "7e658e8c50cf3a9304c4045c9c6c490d892741b193f42e4c516e17e301d998a8"
+    "sha256": "0e75be7986a5e894ab58161f68cfe8140fa785160dbe0b2e0d5256a32be29189"
+  },
+  "book-cover-cocoa-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "e873f4aa48b87fdac7c82b8079873a138d9f338f1c0a6f8e48cffde9a44ec953"
+  },
+  "book-cover-lavender-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "a51e1c439cd6f927f2663cd99feb482e276999fec29756921658c81e720eb7de"
+  },
+  "book-cover-sage-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "bc1dceeb4cea0baa1931cc11e9ca5787037a16676faabb2ecf653c3210e2f004"
+  },
+  "book-cover-terracotta-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "a327c780a658ba5f9e0352004a7df0812cbdc3d406a253619ca51c201e375417"
+  },
+  "book-cover-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "587f9c7aceb61d29ad0a2a0ace1c078cc0d94cd4cee83c282cb61b15c699d29f"
+  },
+  "envelope-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "5db76b7c38f75ae82e7c8d104688269a8febbba1d770334f12e9dcc67d3b331b"
   },
   "lamp-default-v1.png": {
     "source": "approved UI asset 2026-11-02",
     "sha256": "322b2f5526750f3d080ed16c87d541bba4d1026050314594987ead401e48dbb0"
   },
-  "account-avatar-v1.png": {
+  "lamp-home-v1.png": {
     "source": "approved UI asset 2026-11-02",
-    "sha256": "0e75be7986a5e894ab58161f68cfe8140fa785160dbe0b2e0d5256a32be29189"
+    "sha256": "7e658e8c50cf3a9304c4045c9c6c490d892741b193f42e4c516e17e301d998a8"
   },
   "lamp-writing-v1.png": {
     "source": "approved UI asset 2026-11-02",
     "sha256": "5f3e97f9598c6e47ae9c83cff0f65b444dcceb35c7c0c8ed682ffe306f7c1afc"
+  },
+  "library-background-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "f88d66717fc9f7e2673b940db59c4901f09b377180aceab4e2355aee2ed13631"
   }
 }

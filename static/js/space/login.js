@@ -1,4 +1,4 @@
-import {clearIdentity} from './ui.js?v=20261102-4a';
+import {clearIdentity,safeNext} from './ui.js?v=20261102-5a';
 const form=document.getElementById('loginForm'),error=document.getElementById('login-error'),username=document.getElementById('username');
 const remembered=localStorage.getItem('remembered_id');if(remembered){username.value=remembered;document.getElementById('rememberId').checked=true;}
 form.addEventListener('submit',async event=>{
@@ -8,7 +8,7 @@ form.addEventListener('submit',async event=>{
   const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:'아이디와 비밀번호를 확인해 주세요.');
   clearIdentity();localStorage.setItem('access_token',data.access_token);localStorage.setItem('nickname',data.nickname);localStorage.setItem('user_id',String(data.user_id));
   if(document.getElementById('rememberId').checked)localStorage.setItem('remembered_id',username.value);else localStorage.removeItem('remembered_id');
-  const next=new URLSearchParams(location.search).get('next');location.assign(next==='/space'?'/space':'/');
+  const next=new URLSearchParams(location.search).get('next');location.assign(next?safeNext(next):'/');
  }catch(failure){error.textContent=failure instanceof TypeError?'연결하지 못했어요. 잠시 후 다시 시도해 주세요.':failure.message;}
  finally{button.disabled=false;}
 });

@@ -1,4 +1,4 @@
-import {token,json,node,dialog,logout,clearIdentity} from './ui.js?v=20261102-4a';
+import {token,json,node,dialog,logout,clearIdentity} from './ui.js?v=20261102-5a';
 let authenticated=false;
 async function header(){if(!token())return;const observedToken=token();try{
  const user=await json('/account/me',{authRedirect:false});authenticated=true;

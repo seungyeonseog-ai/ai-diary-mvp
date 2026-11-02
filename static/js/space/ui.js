@@ -4,6 +4,7 @@ export const token = () => localStorage.getItem('access_token');
 export const owner = () => localStorage.getItem('user_id');
 export function node(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 export function id(){return crypto.randomUUID();}
+export function safeNext(value,fallback='/space'){try{const url=new URL(value,location.origin);return url.origin===location.origin&&/^\/(space|library|diary\/[1-9]\d*)$/.test(url.pathname)?url.pathname+url.search:fallback;}catch{return fallback;}}
 export function clearIdentity(){
  const uid=owner();for(const key of ['access_token','nickname','user_id'])localStorage.removeItem(key);
  for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key.startsWith(`space:${uid}:`))sessionStorage.removeItem(key);}
@@ -21,7 +22,7 @@ export const confirm = (title,description,yes='확인',no='취소') => dialog(ti
 let toastTimer;
 export function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4000);}
 let expired=false;
-export async function expire(){if(expired)return;expired=true;clearIdentity();await dialog('다시 로그인해 주세요','로그인이 만료되었거나 유효하지 않습니다.');location.replace('/login?next=%2Fspace');}
+export async function expire(){if(expired)return;expired=true;const next=safeNext(location.pathname+location.search);clearIdentity();await dialog('다시 로그인해 주세요','로그인이 만료되었거나 유효하지 않습니다.');location.replace('/login?next='+encodeURIComponent(next));}
 export async function request(path,{method='GET',data,body,signal,accept,authRedirect=true}={}){
  const sentToken=token();let response;
  try{response=await fetch(path,{method,cache:'no-store',headers:{...(sentToken?{Authorization:`Bearer ${sentToken}`} : {}),...(data?{'Content-Type':'application/json'}:{}),...(accept?{Accept:accept}:{})},body:data?JSON.stringify(data):body,signal});}

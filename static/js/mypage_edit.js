@@ -332,7 +332,9 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // 항상 '공간' 탭이 기본 active + 콘텐츠 로드
-  if (mainTabs.length > 0) {
+  const requestedPanel = new URLSearchParams(window.location.search).get('panel');
+  const directStudy = new URLSearchParams(window.location.search).get('tab') === 'study' && ['weekly','encourage'].includes(requestedPanel);
+  if (mainTabs.length > 0 && !directStudy) {
     mainTabs.forEach(tab => tab.classList.remove('active'));
     const spaceTab = document.querySelector('.main-tab[data-tab="space"]');
     if (spaceTab) spaceTab.classList.add('active');
@@ -625,8 +627,13 @@ document.addEventListener('DOMContentLoaded', function() {
   if (window.location?.search && new URLSearchParams(window.location.search).get('tab') === 'study') {
     mainTabs.forEach(tab => { if (tab.dataset.tab !== 'study') tab.hidden = true; });
     const back = document.createElement('a');
-    back.href = '/space'; back.textContent = '오늘의 이야기'; back.className = 'main-tab';
+    back.href = '/library'; back.textContent = '서재로 돌아가기'; back.className = 'main-tab';
     document.querySelector('.main-tabs')?.prepend(back);
-    document.querySelector('.main-tab[data-tab="study"]')?.click();
+    if (directStudy) {
+      mainTabs.forEach(tab => tab.classList.toggle('active',tab.dataset.tab === 'study'));
+      updateSubTabs('study');
+      for (const tab of subTabs?.querySelectorAll('.sub-tab') || []) tab.classList.toggle('active',tab.textContent === (requestedPanel === 'weekly' ? '일주일 차트' : '하루의 마무리'));
+      if (requestedPanel === 'weekly') switchToSevenChartTab(); else switchToEncourageTab();
+    } else document.querySelector('.main-tab[data-tab="study"]')?.click();
   }
 });

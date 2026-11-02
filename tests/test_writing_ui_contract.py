@@ -29,7 +29,7 @@ class PageContractTests(unittest.TestCase):
             response=self.client.get(path)
             self.assertEqual(response.status_code,200)
             self.assertIn(marker,response.text)
-            self.assertIn('20261103-5c',response.text)
+            self.assertIn('20261103-5d',response.text)
             self.assertEqual(response.headers.get('cache-control'),'no-store')
             self.assertIn('<svg class="icon"',response.text)
         self.assertEqual(self.client.get('/mypage_edit?tab=study',follow_redirects=False).headers['location'],'/library')

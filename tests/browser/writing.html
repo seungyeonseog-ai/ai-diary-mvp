@@ -1,0 +1,32 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><title>작성 기반 격리 검증</title>
+<style>body{font:18px/1.7 sans-serif;background:#fff7ed;color:#382517;max-width:980px;margin:40px auto}button{padding:12px 24px;font:inherit;background:#ffd3a5;border:1px solid #ae713c;border-radius:12px}pre{white-space:pre-wrap;padding:20px;border:1px solid #c69b6d;border-radius:12px;background:white}small{color:#79593b}</style>
+<h1>작성·초안 API 격리 검증</h1><p>합성 계정과 별도 DB를 사용합니다. 제품의 새 UI 구현은 다음 단계입니다.</p>
+<button id="run">검증 실행</button><p id="status">대기</p><pre id="checks"></pre><h2 id="title">생성된 일기 확인</h2><pre id="body">생성 대기</pre>
+<script>
+let token='', results={};
+const status=document.getElementById('status'), checks=document.getElementById('checks');
+function check(key,ok){results[key]=!!ok;checks.textContent+=`${ok?'PASS':'FAIL'} ${key}\n`;if(!ok)throw Error(key)}
+async function call(path,method='GET',data,expected=200){let response=await fetch(path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});check('http_'+method+'_'+path.split('?')[0]+'_'+expected,response.status===expected);return response.status===200?response.json():null}
+async function login(owner){let response=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'writing-fixture-'+owner,password:'synthetic-only-test'})});check('login_'+owner,response.ok);let data=await response.json();token=data.access_token}
+document.getElementById('run').onclick=async function(){this.disabled=true;try{
+ status.textContent='실제 짧은 AI 답변 생성 중…';await login(1);let writing=await call('/writing','POST');let id=writing.id;
+ await call(`/writing/${id}/messages`,'POST',{request_id:'msg1',message:'오늘은 포트폴리오 한 페이지를 정리했어.'});
+ await call(`/writing/${id}/messages`,'POST',{request_id:'msg2',message:'조금 막막했지만 끝내고 나니까 뿌듯했어.'});
+ let lamp=await call(`/writing/${id}/generate/lamp`,'POST',{request_id:'lamp1'});check('lamp_complete_bubbles',lamp.result.bubbles.length>0&&lamp.result.bubbles.every(b=>!/[?？]\s*$/.test(b)));
+ let replay=await call(`/writing/${id}/generate/lamp`,'POST',{request_id:'lamp1'});check('lamp_retry_same_operation',lamp.operation_id===replay.operation_id);
+ status.textContent='실제 AI 일기 생성 중…';let generated=await call(`/writing/${id}/generate/diary`,'POST',{request_id:'diary1'});let diaryId=generated.result.diary_id;
+ let diary=await call(`/writing/diaries/${diaryId}`);check('draft_state',diary.state==='draft');check('title_body',diary.title.length>0&&diary.body.length>0);
+ document.getElementById('title').textContent=diary.title;document.getElementById('body').textContent=diary.body;
+ check('draft_not_in_library',(await call('/writing/diaries')).total===0);
+ diary=await call(`/writing/diaries/${diaryId}`,'PATCH',{version:diary.version,title:diary.title,body:diary.body+'\n합성 수정 확인.'});
+ const photo=await (await fetch('/fixture/photo')).blob();let upload=await fetch(`/writing/diaries/${diaryId}/photos?version=${diary.version}&request_id=p1`,{method:'POST',headers:{Authorization:'Bearer '+token},body:photo});check('photo_upload',upload.ok);let uploaded=await upload.json();
+ let saved=await call(`/writing/diaries/${diaryId}/save`,'POST',{version:uploaded.version});let savedReplay=await call(`/writing/diaries/${diaryId}/save`,'POST',{version:uploaded.version});check('save_retry_same_version',saved.version===savedReplay.version);
+ check('saved_in_library',(await call('/writing/diaries')).total===1);
+ diary=await call(`/writing/diaries/${diaryId}`);check('photo_list',diary.photos.length===1);let image=await fetch(diary.photos[0].url,{headers:{Authorization:'Bearer '+token}});check('photo_read',image.ok&&image.headers.get('content-type')==='image/png');
+ await login(2);await call(`/writing/diaries/${diaryId}`,'GET',undefined,404);check('other_library_empty',(await call('/writing/diaries')).total===0);
+ await login(1);await call(`/writing/diaries/${diaryId}`,'DELETE');let discarded=await call(`/writing/${id}`);check('discard_hides_bubbles',discarded.messages.length===0);await call(`/writing/diaries/${diaryId}`,'GET',undefined,404);
+ let second=await call('/writing','POST');check('new_writing_id',second.id!==id);await call(`/writing/${second.id}/messages`,'POST',{request_id:'new-b',message:'새 작성 B 합성 이야기'});
+ let scope=await call(`/fixture/scope/${second.id}`);check('new_diary_b_only',scope.new_writing_only&&scope.writing_count===1);check('day_source_a_b_preserved',scope.day_count===3);check('exactly_two_live_calls',scope.ai_calls===2);
+ await call('/fixture/evidence','POST',results);status.textContent='완료: 모든 항목 PASS · 실제 AI 2회 · 사용자 DB 접근 없음';
+ }catch(error){status.textContent='실패: '+error.message;console.error(error);await fetch('/fixture/evidence',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...results,failed:true})})}};
+</script></html>

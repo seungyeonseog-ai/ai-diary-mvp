@@ -33,6 +33,7 @@ def study_status(db, user_id):
     weekly = latest_weekly(db, user_id)
     ai_diary = db.query(DiaryReport).filter(
         DiaryReport.user_id == user_id, DiaryReport.source_type == 'ai',
+        DiaryReport.state == 'saved',
         DiaryReport.timestamp >= start, DiaryReport.timestamp < end
     ).first()
     unused = db.query(DiaryAnalysisReport).filter(

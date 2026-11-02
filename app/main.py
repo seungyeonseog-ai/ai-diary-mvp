@@ -8,6 +8,8 @@ from app.api.routers.chat_event_router import router as chat_event_router
 from app.api.routers.websocket_router import router as websocket_router
 from app.api.routers.study_router import router as study_router
 from app.api.routers.constellation import router as constellation_router
+from app.api.routers.writing_router import router as writing_router
+from app.core.writing_migration import require_writing_schema
 import asyncio
 from contextlib import suppress
 from app.tasks.session_task_runner import session_checker_all_users_loop
@@ -49,6 +51,7 @@ logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 
 
 Base.metadata.create_all(bind=engine) # 클래스 정의생성해서 테이블 만들기
+require_writing_schema(engine)
 
 
 app = FastAPI()
@@ -68,6 +71,7 @@ app.include_router(chat_event_router)
 app.include_router(websocket_router)
 app.include_router(study_router)
 app.include_router(constellation_router)
+app.include_router(writing_router)
 
 
 @app.on_event("startup")

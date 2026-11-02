@@ -11,6 +11,12 @@ class DiaryReport(Base):
     source_type = Column(String(20))  # 'user' or 'ai'
     timestamp = Column(DateTime, default=get_kst_now)
 
+    # 기존 일기는 saved로 이행한다. 초안/저장은 같은 행을 갱신한다.
+    title = Column(Text, nullable=False, default="", server_default="")
+    state = Column(String(20), nullable=False, default="saved", server_default="saved")
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+    updated_at = Column(DateTime, nullable=True)
+
     # 하루에 한 번만 일기 작성 가능하도록 제약조건
     __table_args__ = (
         UniqueConstraint("user_id", "timestamp", name="uix_user_diary"),  # 정확히는 중복되지만 일단 유지

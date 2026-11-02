@@ -76,16 +76,23 @@ class GPTClient:
             raise
 
     # 스트리밍 방식으로 gpt 의 api 호출
-    async def stream_gpt_response(self, prompt: str):
+    async def stream_gpt_response(self, prompt: str, *, max_completion_tokens=None):
         try:
+            options = {"max_completion_tokens": max_completion_tokens} if max_completion_tokens else {}
             response = await self.async_client.chat.completions.create(
                 model=settings.openai_model,
                 messages=[{"role": "user", "content": prompt}],
-                stream=True
+                stream=True,
+                **options,
             )
             async for chunk in response:
+                if not chunk.choices:
+                    continue
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+                reason = chunk.choices[0].finish_reason
+                if reason and reason != "stop":
+                    raise RuntimeError("AI diary response incomplete")
         except Exception:
             # 오류 문장을 정상 일기로 저장하지 않도록 서비스에 실패를 전달한다.
             raise RuntimeError("AI diary streaming failed") from None

@@ -109,6 +109,7 @@ class TodayChatMessageRepository:
                 db.query(DiaryReport)
                 .filter(
                     DiaryReport.user_id == user_id,
+                    DiaryReport.state != "discarded",
                     func.date(DiaryReport.timestamp) == today
                 )
                 .first()
@@ -146,6 +147,7 @@ class TodayChatMessageRepository:
                 .filter(
                     DiaryReport.user_id == user_id,
                     DiaryReport.source_type == source_type,
+                    DiaryReport.state != "discarded",
                     func.date(DiaryReport.timestamp) == today
                 )
                 .first()
@@ -160,7 +162,7 @@ class TodayChatMessageRepository:
         try:
             diaries = (
                 db.query(DiaryReport)
-                .filter(DiaryReport.user_id == user_id)
+                .filter(DiaryReport.user_id == user_id, DiaryReport.state == "saved")
                 .order_by(DiaryReport.timestamp.desc())  # 최신순 정렬
                 .all()
             )
@@ -176,6 +178,7 @@ class TodayChatMessageRepository:
                 db.query(DiaryReport)
                 .filter(
                     DiaryReport.diary_id == diary_id,
+                    DiaryReport.state == "saved",
                     DiaryReport.user_id == user_id
                 )
                 .first()

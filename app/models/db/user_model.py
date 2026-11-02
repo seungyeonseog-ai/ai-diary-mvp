@@ -1,6 +1,7 @@
 # models/user_model.py
 
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, DateTime
+from app.utils.time_utils import get_kst_now
 from app.core.connection import Base
 
 class User(Base):
@@ -11,6 +12,9 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)      # 이메일 (중복 방지)
     hashed_password = Column(String, nullable=False)                     # 암호화된 비밀번호
     nickname = Column(String, nullable=False)                            # 유저 닉네임
+    registered_at = Column(DateTime, nullable=True, default=get_kst_now)
+    # 가입 시각이 없는 기존 계정의 체험 시작일은 별도 보관한다.
+    trial_started_at = Column(DateTime, nullable=True)
 
 
 

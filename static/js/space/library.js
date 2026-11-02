@@ -1,11 +1,10 @@
-import {$,node,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261102-5a';
-import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints} from './library_model.js?v=20261102-5a';
+import {$,node,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261103-5b';
+import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-5b';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
-const covers=['book-cover-v1.png','book-cover-sage-v1.png','book-cover-lavender-v1.png','book-cover-terracotta-v1.png','book-cover-cocoa-v1.png'];
-const cover=id=>'/static/images/space/'+covers[Math.abs(Number(id)||0)%covers.length];
+const cover=coverURL;
 let state=null,today=null,sequence=0,cardSequence=0,controller=null,retry=null,photoURLs=[],socket=null,reconnect=null;
 function lockIcon(){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','icon lock-icon');svg.setAttribute('aria-hidden','true');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-lock');svg.append(use);return svg;}
-function dateLabel(date){return new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'}).format(new Date(date+'T12:00:00+09:00'));}
+function dateLabel(date){return new Intl.DateTimeFormat('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'}).format(new Date(date+'T12:00:00+09:00'));}
 function clearPhotos(){for(const url of photoURLs)URL.revokeObjectURL(url);photoURLs=[];}
 function fail(message,action){$('library-error-message').textContent=message;$('library-error').hidden=false;retry=action;}
 async function load(next=null,push=false){
@@ -26,7 +25,7 @@ async function load(next=null,push=false){
 }
 function renderShelf(data){
  $('shelf-view').hidden=false;$('books').replaceChildren();
- data.books.forEach((book,index)=>{
+ shelfBooks(data.books).forEach((book,index)=>{
   if(book.state==='empty'){$('books').append(node('div','book empty','기록이 채워질 자리'));return;}
   const element=node(book.state==='saved'?'a':'button','book '+book.state+(book.state==='saved'&&Number(book.id)%5===4?' dark-cover':''));if(book.state==='saved')element.href=diaryURL(book.id,state);
   const image=node('img');image.src=book.state==='saved'?cover(book.id):'/static/images/space/book-cover-cocoa-v1.png';image.alt='';
@@ -79,9 +78,9 @@ function chart(data){
  const points=emotionPoints(data);if(!points.length)throw Error('표시할 감정 차트 자료가 없어요.');
  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 440 180');svg.setAttribute('role','img');svg.setAttribute('aria-label','저장된 주간 감정 점수 흐름');
  const add=(tag,attributes)=>{const el=document.createElementNS(ns,tag);for(const [key,value]of Object.entries(attributes))el.setAttribute(key,value);svg.append(el);return el;};
- for(let i=0;i<4;i++)add('line',{x1:24,y1:25+i*35,x2:420,y2:25+i*35,stroke:'#d9b58a',opacity:'.3'});
- const max=Math.max(1,...points.map(point=>point.value));const positions=points.map((point,index)=>({x:points.length===1?220:24+index*396/(points.length-1),y:130-point.value/max*100}));
- const line=positions.map(point=>`${point.x},${point.y}`).join(' ');add('polygon',{points:`24,140 ${line} 420,140`,fill:'#e9a777',opacity:'.22'});add('polyline',{points:line,stroke:'#f0844a','stroke-width':2.5,fill:'none'});
+ for(const value of [-1,0,1])add('line',{x1:24,y1:80-value*55,x2:420,y2:80-value*55,stroke:'#d9b58a',opacity:value===0?'.8':'.3'});
+ const scale=chartScale(points);const positions=points.map((point,index)=>({x:points.length===1?220:24+index*396/(points.length-1),y:scale.y(point.value)}));
+ const line=positions.map(point=>`${point.x},${point.y}`).join(' ');add('polygon',{points:`${positions[0].x},80 ${line} ${positions.at(-1).x},80`,fill:'#e9a777',opacity:'.22'});add('polyline',{points:line,stroke:'#f0844a','stroke-width':2.5,fill:'none'});
  positions.forEach((point,index)=>{add('circle',{cx:point.x,cy:point.y,r:5,fill:'#f28e58',stroke:'#fff7e8','stroke-width':2});const label=add('text',{x:point.x,y:166,'text-anchor':'middle',fill:'#8c6242','font-size':11});label.textContent=points[index].date.slice(5).replace('-','/');});
  $('weekly-preview').replaceChildren(svg);
 }

@@ -1,9 +1,9 @@
 {% extends "ui_base.html" %}{% block title %}서재 · 나의 공간{% endblock %}
 {% block body_class %}space-page library-page{% endblock %}
-{% block head %}<link rel="stylesheet" href="/static/css/library.css?v=20261102-5a">{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/library.css?v=20261103-5b">{% endblock %}
 {% block content %}{% include "space_sidebar.html" %}
 <main id="library-workspace" class="workspace library-workspace" aria-busy="true">
-<header class="library-hero"><h1>서재 <span>❧</span></h1><p>당신의 소중한 이야기들이<br>차곡차곡 모여 있는 공간이에요.</p></header>
+<header class="library-hero"><h1>서재</h1><p>당신의 소중한 이야기들이<br>차곡차곡 모여 있는 공간이에요.</p></header>
 <div id="library-loading" class="library-loading" role="status">기록을 꺼내고 있어요…</div>
 <section id="shelf-view" hidden aria-label="서재 책장"><div class="library-section-heading"><h2>{{icon('book')}} 지난 일기</h2><a id="diary-more" href="/library?view=calendar">더보기 {{icon('arrow')}}</a></div>
 <div class="shelf-row"><button id="books-older" class="shelf-arrow" aria-label="과거 일기 5권 보기">‹</button><div id="books" class="books"></div><button id="books-newer" class="shelf-arrow" aria-label="최근 일기 5권 보기">›</button></div><p id="shelf-page" class="shelf-page"></p>
@@ -22,4 +22,4 @@
 </main>
 <dialog id="month-picker" class="ui-dialog month-picker" aria-labelledby="month-picker-title"><h2 id="month-picker-title">기록을 살펴볼 달</h2><div class="year-picker"><button id="year-prev" aria-label="이전 연도">‹</button><label>연도 <input id="picker-year" type="number" min="1" inputmode="numeric"></label><button id="year-next" aria-label="다음 연도">›</button></div><div id="picker-months" class="picker-months" role="group" aria-label="월 선택"></div><form method="dialog"><button class="secondary">닫기</button></form></dialog>
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261102-5a"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261103-5b"></script>{% endblock %}

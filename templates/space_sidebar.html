@@ -1,4 +1,5 @@
 <aside class="sidebar" aria-label="공간 메뉴">
+<a class="space-exit" href="/" aria-label="공간 닫고 메인으로 돌아가기">×</a>
 <a class="nav-item {% if active_tab|default('home')=='home' %}active{% endif %}" href="/space" {% if active_tab|default('home')=='home' %}aria-current="page"{% endif %}>{{icon('home')}}<span>홈</span></a>
 <a class="nav-item {% if active_tab|default('home')=='library' %}active{% endif %}" href="/library" {% if active_tab|default('home')=='library' %}aria-current="page"{% endif %}>{{icon('book')}}<span>서재</span></a>
 <button class="nav-item coming-soon" data-feature="텃밭">{{icon('leaf')}}<span>텃밭</span><small>준비 중</small></button>

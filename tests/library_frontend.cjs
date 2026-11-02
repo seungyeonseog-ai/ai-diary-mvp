@@ -9,6 +9,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
  const points=m.emotionPoints({diary_analyses:[{date_str:'2026-11-03',scores:[.7]},{date_str:'2026-11-01',scores:[.2,.3]}]});assert.equal(points.length,2);assert.equal(points[0].date,'2026-11-01');assert.equal(points[0].value,.5);
  assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2026-11-01',scores:['0.7']}]}));assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'bad',scores:[.7]}]}));
  assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2026-02-30',scores:[.7]}]}));
+ const books=[{id:9,date:'2026-10-28',state:'saved'},{id:4,date:'2025-09-03',state:'saved'},{id:3,date:'2025-09-02',state:'saved'},{state:'future',date:'2026-11-04'}];
+ const display=m.shelfBooks(books);assert.equal(display.map(b=>b.id||'future').join(','),'3,4,9,future');assert.equal(books[0].id,9);
+ const signed=m.emotionPoints({diary_analyses:[{date_str:'2025-08-08',scores:[-.5,-.3,-.2]},{date_str:'2025-08-11',scores:[.5,.3,.2]}]});
+ assert.equal(signed[0].value,-1);const scale=m.chartScale(signed);assert.ok(scale.y(-1)>scale.y(0));assert.ok(scale.y(1)<scale.y(0));assert.equal(scale.y(0),80);
+ assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2025-08-08',scores:[-1.1]}]}));assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2025-08-08',scores:[NaN]}]}));
+ assert.equal(m.coverURL(9),'/static/images/space/book-cover-cocoa-v1.png');
  const ui=new vm.SourceTextModule(fs.readFileSync('static/js/space/ui.js','utf8'),{context});await ui.link(()=>{});await ui.evaluate();const safe=ui.namespace.safeNext;
  assert.equal(safe('//example.org/diary/1'),'/space');assert.equal(safe('javascript:alert(1)'),'/space');assert.equal(safe('/diary/0'),'/space');assert.equal(safe('/library?view=list'),'/library?view=list');assert.equal(safe('/diary/12?return=x'),'/diary/12?return=x');
  console.log('PASS library: calendar leap/century/year1, month boundary, paging validation, return URL, real-date chart, strict numeric scores, safe login redirect');

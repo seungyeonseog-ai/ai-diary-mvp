@@ -25,6 +25,7 @@ with Session(engine) as db:
  now=get_kst_now()
  for index in range(12):
   db.add(DiaryReport(diary_id=index+1,user_id=1,title=['조금씩, 나의 속도로','잠시 쉬어가도 괜찮아','작은 용기를 모은 하루','따뜻한 차 한 잔','오늘의 마음을 남기며'][index%5],content='화면 검증을 위한 합성 일기입니다.\n\n작은 일을 하나 마치고 나니 마음이 편안해졌다. 오늘의 수고를 차분히 돌아보며 하루를 마무리한다.',timestamp=now-timedelta(days=index)))
+ db.add(DiaryReport(diary_id=19,user_id=1,title='지난해 9월 기록',content='합성 연도 구분 검증',timestamp=datetime(2025,9,3,12)))
  db.add(DiaryReport(diary_id=20,user_id=1,title='윤일의 기록',content='합성 윤일 기록입니다.',timestamp=datetime(2024,2,29,12)))
  db.commit()
 faults={'read':0,'edit':0,'delete':0,'photo':0}
@@ -46,7 +47,7 @@ def study(user=Depends(get_current_user)):
  now=get_kst_now();state='ready' if user.id==1 else 'unavailable';return {'user_id':user.id,'server_now':now.replace(tzinfo=KST).isoformat(),'server_date':now.date().isoformat(),'encouragement':{'state':state},'weekly':{'state':state}}
 @app.get('/study/weekly/latest')
 def weekly():
- today=get_kst_now().date();return {'diary_analyses':[{'date_str':(today-timedelta(days=i)).isoformat(),'scores':[.2+i*.05,.3]} for i in (6,4,0)]}
+ today=get_kst_now().date();return {'diary_analyses':[{'date_str':(today-timedelta(days=i)).isoformat(),'scores':[-.5,.2] if i==6 else [.2+i*.05,.3]} for i in (6,4,0)]}
 @app.websocket('/ws/{uid}')
 async def socket(ws:WebSocket,uid:int):
  await ws.accept();await ws.receive_json();await ws.close(code=1000)

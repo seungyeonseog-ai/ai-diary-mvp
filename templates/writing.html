@@ -1,0 +1,38 @@
+{% extends "ui_base.html" %}
+{% block body_class %}space-page{% endblock %}
+{% block content %}
+<aside class="sidebar" aria-label="공간 메뉴"><a class="nav-item active" href="/space" aria-current="page">{{icon('home')}}<span>홈</span></a>
+<a class="nav-item" href="/mypage_edit?tab=study">{{icon('book')}}<span>서재</span></a>
+<button class="nav-item coming-soon" data-feature="텃밭">{{icon('leaf')}}<span>텃밭</span><small>준비 중</small></button>
+<button class="nav-item coming-soon" data-feature="별자리">{{icon('star')}}<span>별자리</span><small>준비 중</small></button>
+<div class="sidebar-bottom"><button id="settings" class="nav-item">{{icon('settings')}}<span>설정</span></button>
+<button id="account" class="avatar-button" aria-label="계정 정보"><img src="/static/images/space/account-avatar-v1.png" alt=""><span class="online-dot"></span></button></div></aside>
+<main id="workspace" class="workspace" aria-busy="true">
+ <div id="loading-view" class="loading-view"><div class="soft-spinner"></div><p>나의 공간을 열고 있어요.</p></div>
+ <section id="chat-view" class="chat-view" hidden aria-label="오늘의 이야기">
+  <header class="chat-heading"><button id="lamp-submit" class="lamp-button" aria-label="전등을 눌러 이야기 보내기"><img src="/static/images/space/lamp-default-v1.png" alt=""></button>
+  <h1>오늘 하루는 어땠나요?</h1><p>편하게 이야기하면 일기로 정리해드릴게요.</p></header>
+  <div id="messages" class="messages" role="log" aria-label="대화" aria-live="polite"></div>
+  <div class="composer-area"><p id="reply-status" class="reply-status" role="status"></p>
+   <form id="composer" class="composer"><textarea id="message-input" aria-label="오늘의 이야기 입력" rows="1" placeholder="오늘 있었던 이야기를 들려주세요…" maxlength="50000"></textarea>
+   <button id="send-message" class="send-button" type="submit" aria-label="이야기 남기기">{{icon('send')}}</button></form>
+   <p class="composer-guide">{{icon('book')}} 이야기를 다 남기면 위의 전등을 눌러주세요.</p>
+   <div class="chat-footer"><span id="quota-label"></span><button id="make-diary" class="text-button" hidden>이 이야기로 일기 만들기 {{icon('arrow')}}</button></div>
+  </div>
+ </section>
+ <section id="generating-view" class="generating-view" hidden aria-live="polite"><img src="/static/images/space/lamp-writing-v1.png" alt="전등 캐릭터가 일기를 쓰고 있어요">
+  <h1>오늘의 이야기를 일기로 옮기고 있어요</h1><p>당신의 마음이 잘 담기도록, 차근차근 쓰는 중이에요.</p><div class="waiting-dots" aria-hidden="true"><i></i><i></i><i></i></div></section>
+ <section id="diary-view" class="diary-view" hidden aria-label="오늘의 일기">
+  <div class="diary-lamp"><img src="/static/images/space/lamp-default-v1.png" alt=""></div>
+  <article class="diary-paper"><p id="diary-date" class="diary-date"></p><div class="diary-title-row"><h1 id="diary-title"></h1><span id="diary-state" class="state-tag"></span></div><div id="diary-body" class="diary-body"></div>
+   <form id="edit-form" hidden><label for="edit-title">제목</label><input id="edit-title" maxlength="500" required><label for="edit-body">본문</label><textarea id="edit-body" rows="9" maxlength="50000" required></textarea><div class="edit-actions"><button id="cancel-edit" type="button" class="text-button">취소</button><button class="primary" type="submit">수정 내용 저장</button></div></form>
+   <div id="photos" class="photos" aria-label="첨부 사진"></div><div id="photo-errors" class="photo-errors" aria-live="polite"></div>
+   <footer class="diary-actions"><div class="diary-tools"><button id="add-photo" class="tool-button">{{icon('photo')}}<span>사진 추가</span></button><input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+    <button id="edit-diary" class="tool-button">{{icon('edit')}}<span>수정</span></button><button id="discard-diary" class="tool-button danger">{{icon('trash')}}<span>폐기</span></button></div><button id="save-diary" class="primary save-button">저장</button></footer>
+   <p id="save-note" class="save-note" role="status"></p>
+  </article>
+ </section>
+ <section id="error-panel" class="error-panel" hidden role="alert"><p id="error-message"></p><button id="retry-action" class="secondary">다시 시도</button></section>
+</main>
+{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261102-4a"></script>{% endblock %}

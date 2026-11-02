@@ -621,4 +621,12 @@ document.addEventListener('DOMContentLoaded', function() {
   window.switchToDiaryGenerateTab = switchToDiaryGenerateTab;
   window.switchToEncourageTab = switchToEncourageTab;
   window.switchToSevenChartTab = switchToSevenChartTab;
+  // 새 홈의 서재 메뉴에서도 기존 열람 기능으로 바로 들어간다.
+  if (window.location?.search && new URLSearchParams(window.location.search).get('tab') === 'study') {
+    mainTabs.forEach(tab => { if (tab.dataset.tab !== 'study') tab.hidden = true; });
+    const back = document.createElement('a');
+    back.href = '/space'; back.textContent = '오늘의 이야기'; back.className = 'main-tab';
+    document.querySelector('.main-tabs')?.prepend(back);
+    document.querySelector('.main-tab[data-tab="study"]')?.click();
+  }
 });

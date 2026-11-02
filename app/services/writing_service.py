@@ -93,6 +93,8 @@ def add_message(bind, user_id, writing_id, client_id, message):
             return msg
         if row.diary_id:
             raise WritingError(409, "일기가 생성되었습니다. 수정하거나 폐기 후 새로 작성해 주세요.")
+        if db.query(WritingOperation).filter_by(writing_id=row.id, kind="diary", state="failed").first():
+            raise WritingError(409, "일기 생성 요청을 먼저 다시 시도해 주세요. 원래 이야기는 보관되어 있습니다.")
         if db.query(WritingOperation).filter_by(writing_id=row.id, state="pending").first():
             raise WritingError(409, "진행 중인 요청이 끝난 뒤 입력해 주세요.")
         # 기존 세션 ID 생성 규칙에 의존하지 않는 작성 전용 기술 세션.

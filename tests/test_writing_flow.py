@@ -193,6 +193,16 @@ class WritingFlowTests(unittest.TestCase):
             self.assertEqual(db.query(WritingOperation).count(), 1)
             self.assertEqual(db.query(ChatMessage).filter_by(role="user").count(), 1)
 
+    def test_failed_diary_keeps_source_fixed_until_retry(self):
+        writing=self.start();self.message(writing);self.generate(writing)
+        self.ai.side_effect=RuntimeError("synthetic diary failure")
+        self.generate(writing,"diary","d1",status=503)
+        response=self.client.post(f"/writing/{writing}/messages",json={"request_id":"late","message":"추가 입력"})
+        self.assertEqual(response.status_code,409)
+        restored=self.client.get(f"/writing/{writing}").json()
+        self.assertTrue(restored["server_now"].endswith("+09:00"))
+        with Session(self.engine) as db:self.assertEqual(db.query(ChatMessage).filter_by(role="user").count(),1)
+
     def test_pending_operation_and_expired_lease(self):
         writing = self.start()
         self.message(writing)

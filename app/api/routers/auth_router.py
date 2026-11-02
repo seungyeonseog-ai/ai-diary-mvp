@@ -24,6 +24,11 @@ templates = Jinja2Templates(directory="templates")
 # 1. API 라우터 객체 생성
 router = APIRouter()
 
+
+@router.get("/account/me")
+def account_me(current_user: User = Depends(get_current_user)):
+    return {"id":current_user.id, "nickname":current_user.nickname}
+
 # 2. DB 세션 주입 함수
 def get_db():
     db = SessionLocal()

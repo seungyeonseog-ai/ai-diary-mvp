@@ -14,13 +14,18 @@ templates = Jinja2Templates(directory="templates")
 
 @router.get("/", response_class=HTMLResponse)
 async def read_main_page(request: Request):
-    return templates.TemplateResponse("main.html", {"request": request})
+    return templates.TemplateResponse("home.html", {"request": request}, headers={"Cache-Control":"no-store"})
 
 
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse("login_v2.html", {"request": request}, headers={"Cache-Control":"no-store"})
+
+
+@router.get("/space", response_class=HTMLResponse)
+async def writing_page(request: Request):
+    return templates.TemplateResponse("writing.html", {"request":request}, headers={"Cache-Control":"no-store"})
 
 @router.get("/register", response_class=HTMLResponse)
 async def login_page(request: Request):

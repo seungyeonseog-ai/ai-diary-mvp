@@ -22,10 +22,11 @@ from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository
 from app.services.study_state_service import study_status, today_encouragement, latest_weekly
 
 router = APIRouter(prefix="/study", tags=["study"])
+from app.api.dependencies.writing_dependencies import require_legacy_creation
 logger = logging.getLogger(__name__)
 
 # 일기 생성 스트리밍 라우터 -- sub diary generat 버튼이랑 호출출
-@router.post("/diary/generate/stream")
+@router.post("/diary/generate/stream", dependencies=[Depends(require_legacy_creation)])
 async def generate_diary_stream(
     current_user: User = Depends(get_current_user),
     diary_service: DiaryService = Depends()
@@ -118,7 +119,7 @@ async def generate_diary_stream(
 
 
 # 사용자 직접 일기 저장 라우터
-@router.post("/user/diary/save")
+@router.post("/user/diary/save", dependencies=[Depends(require_legacy_creation)])
 def save_user_diary(
     diary_data: ManualDiaryInput,
     current_user: User = Depends(get_current_user),

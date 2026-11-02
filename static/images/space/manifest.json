@@ -1,0 +1,18 @@
+{
+  "lamp-home-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "7e658e8c50cf3a9304c4045c9c6c490d892741b193f42e4c516e17e301d998a8"
+  },
+  "lamp-default-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "322b2f5526750f3d080ed16c87d541bba4d1026050314594987ead401e48dbb0"
+  },
+  "account-avatar-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "0e75be7986a5e894ab58161f68cfe8140fa785160dbe0b2e0d5256a32be29189"
+  },
+  "lamp-writing-v1.png": {
+    "source": "approved UI asset 2026-11-02",
+    "sha256": "5f3e97f9598c6e47ae9c83cff0f65b444dcceb35c7c0c8ed682ffe306f7c1afc"
+  }
+}

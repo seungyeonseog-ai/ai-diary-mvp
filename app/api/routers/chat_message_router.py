@@ -25,10 +25,11 @@ from app.config.settings import settings
 
 
 router = APIRouter()
+from app.api.dependencies.writing_dependencies import require_legacy_creation
 
 
 # 채팅 메시지 저장
-@router.post("/chat/send")
+@router.post("/chat/send", dependencies=[Depends(require_legacy_creation)])
 def send_message(
     data: MessageInput,
     db: Session = Depends(get_db),
@@ -61,7 +62,7 @@ def send_message(
 
 logger = logging.getLogger(__name__)
 
-@router.post("/chat/response_stream")
+@router.post("/chat/response_stream", dependencies=[Depends(require_legacy_creation)])
 async def stream_response(
     data: ChatResponseInput,
     request: Request,

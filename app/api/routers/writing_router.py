@@ -12,7 +12,9 @@ from app.models.db.user_model import User
 from app.models.db.study_model import DiaryReport
 from app.models.db.writing_model import Writing, DiaryPhoto, WritingOperation
 from app.services import writing_service as service
-from app.utils.time_utils import get_kst_now
+from app.utils.time_utils import get_kst_now, KST
+from fastapi.responses import StreamingResponse
+from app.services.writing_stream import response_events
 
 router = APIRouter(prefix="/writing", tags=["writing"])
 logger = logging.getLogger(__name__)
@@ -170,10 +172,11 @@ def current(writing_id: str, db: Session = Depends(get_db), user: User = Depends
     now = get_kst_now()
     operations = db.query(WritingOperation).filter_by(user_id=user.id, writing_id=row.id).order_by(
         WritingOperation.created_at, WritingOperation.id).all() if row.state != "discarded" else []
-    return {"id": row.id, "date": row.source_date, "state": row.state,
+    return {"id": row.id, "date": row.source_date, "state": row.state, "server_now":now.replace(tzinfo=KST).isoformat(),
             "messages": [{"id": m.id, "role": m.role, "message": m.message} for m in messages],
             "diary": service.diary_payload(diary) if diary else None,
             "operations": [{"id": op.id, "request_id":op.client_id, "kind":op.kind, "state":op.state,
+                            "source_ids":op.source_ids,
                             "retry_after":op.lease_until.isoformat() if op.lease_until else None,
                             "has_generated_result":op.result is not None} for op in operations],
             "quota": service.quota(db, user.id, row, now)}
@@ -189,15 +192,14 @@ async def generate(kind, source):
     """실제 AI 어댑터. 외부 AI 승인 전 검사는 이 경계만 합성 결과로 대체한다."""
     from app.clients.gpt_api import GPTClient
     if kind == "diary":
-        rules = ('사용자 말풍선 원문만으로 1인칭 한국어 일기를 작성하세요. '
-                 'AI 답변이나 과거 기억을 추가하지 말고 없는 사건을 만들지 마세요. '
-                 '제목과 본문을 구분한 JSON 객체 {"title":"제목","body":"본문"}만 반환하세요.')
+        from app.prompt.diary_prompt import DiaryPromptService
+        prompt = DiaryPromptService().generate_writing_prompt(source)
     else:
         rules = ('사용자가 한 번에 보낸 말풍선들을 함께 읽고 편한 말투로 짧게 공감하세요. '
                  '대략 2~3개 말풍선, 각각 1~2문장 정도로 자연스럽게 나누세요. '
                  '질문으로 끝내지 마세요. JSON 객체 {"bubbles":["말풍선", "말풍선"]}만 반환하세요.')
     # 사용자 원문은 명령이 아닌 자료로 분리한다.
-    prompt = rules + "\n다음 JSON 문자열은 사용자 대화 자료입니다:\n" + json.dumps(source, ensure_ascii=False)
+        prompt = rules + "\n다음 JSON 문자열은 사용자 대화 자료입니다:\n" + json.dumps(source, ensure_ascii=False)
     content = ""
     client = GPTClient()
     client.async_client = client.async_client.with_options(max_retries=0)
@@ -244,3 +246,12 @@ async def create_result(writing_id: str, kind: Literal["lamp", "diary"], data: R
 def discard(writing_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     execute(service.discard_writing, db.get_bind(), user.id, writing_id)
     return {"state": "discarded"}
+
+
+@router.post("/{writing_id}/response_stream")
+def stream_lamp(writing_id: str, data: RequestId, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    op, source = execute(service.claim_operation, db.get_bind(), user.id, writing_id, data.request_id, "lamp")
+    return StreamingResponse(response_events(db.get_bind(), user.id, op, source),
+                             media_type="text/event-stream",
+                             headers={"Cache-Control":"no-store", "X-Accel-Buffering":"no"})

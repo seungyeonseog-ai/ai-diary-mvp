@@ -42,3 +42,19 @@
 - 공간 메뉴 맨위X→공개메인(/), 로그인 상태 유지. 서재 제목 옆 장식 제거. 사용자 미전달 시안의 정확 달력/카드/봉투 및 파란 표시 대상은 보류하며 구현완료로 확대하지 않는다. 빈서재 안내는 유지.
 - 자산버전20261103-5b. API계약 변경없음. 이전 JS가 메모리에 남은 열린 화면은 새로고침 필요. 기존버전 URL도 동일 최신 정적파일 제공. 서버 템플릿에서 새버전 요청/200 확인, 불필요 재시작 없음.
 - 검증: 전체Python148개/전체 frontend.cjs 통과. Node 책장 순서/원본배열보존/음수범위·0축검사 추가. 격리8016 브라우저에서 실제 좌우 날짜 증가/과거페이지/2025-09 달력·목록/표지색 일치/사진 첨부 후 blob로드/X메인복귀 확인. 주간합성자료 음수 포함. 운영DB 쓰기/AI호출0, 실제계정 로그인 브라우저는 미검증.
+
+
+## 2026-11-03 사용자 시안 적용·로그인 이동 통일
+
+- 로그인 성공은 항상 공개메인(/)으로 이동한다. 기존 next=/space가남은주소도동일. 입장버튼의로그인링크는/login. 로그인후명시적으로입장버튼을다시눌러/space로간다. 직접일기/서재의만료후로그인도메인으로돌아가는사용자요청정책.
+- 지난일기에서는서재히어로를숨겨상단제목/탭/연월/달력에집중. 첫번째시안의갈색팝오버를날짜버튼아래배치,4열12개월/선택월크림색/연도화살표와직접입력/닫기X·Esc·바깥클릭지원. 달력과목록공통. 미래월비활성/기존조회및복귀정책유지.
+- 두번째시안의밝은크림주간카드/밝은베이지응원카드배경을ready/잠금/오류에도유지. 제목옆아이콘없음. 응원미도착은봉투에코드잠금겹침,도착은잠금해제. waiting_time/pending/insufficient문구구분. 주간잠금안내는실제현재서버조건과다른3개일기문구를단정하지않고대화기록안내사용. 주간자격변경은기존7번후속범위.
+- 파란표시대상은서재제목옆장식으로확인했고이전92c187d제거가일치. 사이드바서재책아이콘은유지.
+- envelope-v2.png:내장imagegen1회/참조시안/투명정면크림봉투+산호하트,1536x1024RGBA/alpha0~254. 기존v1보존. manifest해시추가. 앱외부AI검증호출0.
+- 최종생성프롬프트: Create a single transparent UI asset, matching the envelope illustration in reference image 2: front-facing closed cream-peach paper envelope with softly rounded corners, shallow warm 3D shading, delicate diagonal folded seams, small coral red heart seal centered on the flap. Front orthographic view, horizontal rectangular envelope, no tilt, no perspective rotation. Envelope only, no padlock, no text, no rays, no card background. Refined soft warm storybook UI aesthetic. Generous transparent padding. This asset will be used with a separate code-rendered padlock overlay. Preserve transparent background.
+- 자산버전20261103-5c. 기존열린로그인/공간은새로고침해새코드적용. API계약은유지. 8000/8016의홈/next있는로그인/서재HTML과JS/CSS/봉투11경로동일해시확인.
+- 검증:전체Python148 in33.296s OK,전체frontend.cjs PASS. 신규login_landing_frontend는기존space/library/외부next·직접진입성공메인/실패시유지검사. 격리브라우저는로그아웃된메인의입장버튼부터로그인성공메인복귀및기존next=/space호환확인. 연도→월선택·목록동일패널·X/Esc·활성/잠금카드와새봉투확인. 실제8000로그인성공복귀는사용자가직접확인완료/추가확인금지요청을준수했다.
+
+### 후속 작업 검증 원칙 — 사용자 요청
+
+검증서버의직접URL진입을실제사용자의입장버튼경로검증으로대체하지않는다. 동일진입URL/로그인상태/선택월·연도/ready·insufficient·pending·오류를맞추고실제8000의적용파일도비교한다. 실행예: `.venv-local/Scripts/python.exe -B tools/check_ui_parity.py` (로컬8000/8016읽기전용). 동일자산은동일데이터나전체백엔드동작까지보증하지않는다. 격리자료/모의study응답/실제DB/API/사용자관찰을구분한다. 사용자직접확인완료후추가조작금지요청은우선한다.

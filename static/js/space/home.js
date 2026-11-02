@@ -1,4 +1,4 @@
-import {token,json,node,dialog,logout,clearIdentity} from './ui.js?v=20261103-5b';
+import {token,json,node,dialog,logout,clearIdentity} from './ui.js?v=20261103-5c';
 let authenticated=false;
 async function header(){if(!token())return;const observedToken=token();try{
  const user=await json('/account/me',{authRedirect:false});authenticated=true;
@@ -8,6 +8,6 @@ async function header(){if(!token())return;const observedToken=token();try{
 document.getElementById('enter-space').addEventListener('click',async()=>{
  if(authenticated){location.assign('/space');return;}
  if(token()){try{await json('/account/me');location.assign('/space');return;}catch(error){if(error.status!==401)await dialog('잠시 연결이 어려워요',error.message);return;}}
- const answer=await dialog('로그인이 필요한 화면입니다','나의 공간에 들어가려면 로그인해 주세요.');if(answer==='ok')location.assign('/login?next=%2Fspace');
+ const answer=await dialog('로그인이 필요한 화면입니다','나의 공간에 들어가려면 로그인해 주세요.');if(answer==='ok')location.assign('/login');
 });
 void header();

@@ -1,5 +1,5 @@
-import {$,node,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261103-5b';
-import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-5b';
+import {$,node,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261103-5c';
+import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-5c';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 const cover=coverURL;
 let state=null,today=null,sequence=0,cardSequence=0,controller=null,retry=null,photoURLs=[],socket=null,reconnect=null;
@@ -87,10 +87,11 @@ function chart(data){
 async function loadCards(){
  const requestSequence=++cardSequence;
  try{const data=await json('/study/status');if(!same()||requestSequence!==cardSequence)return;
-  $('letter-status').textContent=data.encouragement.state==='ready'?'오늘의 응원 편지가 도착했어요.':'아직 오늘의 편지가 없어요.';
-  $('letter-note').textContent=data.encouragement.state==='ready'?'봉투를 열어 따뜻한 마음을 확인해보세요.':'이야기를 나누고 하루의 마음을 남겨보세요.';
+  const letterState=data.encouragement.state,letterReady=letterState==='ready';$('letter-lock').hidden=letterReady;
+  const letterCopy=letterReady?['오늘의 응원 편지가 도착했어요.','봉투를 열어 따뜻한 마음을 확인해보세요.']:letterState==='waiting_time'?['오늘의 편지를 기다리고 있어요.','응원 편지가 도착하면 이곳에서 확인할 수 있어요.']:letterState==='pending'?['응원 편지를 준비하고 있어요.','잠시 후 다시 확인해 주세요.']:['오늘의 대화를 나누셔야 해요.','오늘의 이야기를 들려주시면 따뜻한 응원 메시지가 도착해요.'];
+  $('letter-status').textContent=letterCopy[0];$('letter-note').textContent=letterCopy[1];
   if(data.weekly.state==='ready'){try{const weekly=await json('/study/weekly/latest');if(same()&&requestSequence===cardSequence)chart(weekly);}catch(error){if(same()&&requestSequence===cardSequence)cardError(error.message);}}
-  else $('weekly-preview').replaceChildren(lockIcon(),node('p','','기록이 쌓이면 나의 감정 흐름을 살펴볼 수 있어요.'));
+  else{const hint=node('div','weekly-hint');hint.append(node('p','','대화 기록이 쌓이면 주간 차트를 볼 수 있어요.'),node('p','','감정 흐름, 주요 키워드, 기록 패턴을 확인할 수 있어요.'));$('weekly-preview').replaceChildren(lockIcon(),node('strong','','조금만 더 기록해볼까요?'),node('p','','나만의 주간 차트를 확인할 수 있어요.'),hint);}
  }catch(error){if(same()&&requestSequence===cardSequence&&error.status!==401){$('letter-status').textContent='편지 상태를 불러오지 못했어요.';$('letter-note').textContent='잠시 후 다시 확인해 주세요.';cardError(error.message);}}
 }
 function cardError(message){const button=node('button','','상태 다시 확인');button.addEventListener('click',loadCards);$('weekly-preview').replaceChildren(node('p','',message),button);}
@@ -102,7 +103,11 @@ $('books-older').addEventListener('click',()=>load({...state,page:state.page+1},
 $('calendar-tab').addEventListener('click',()=>load({...state,view:'calendar'},true));$('list-tab').addEventListener('click',()=>load({...state,view:'list'},true));
 $('month-prev').addEventListener('click',()=>moveMonth(-1));$('month-next').addEventListener('click',()=>moveMonth(1));
 $('list-prev').addEventListener('click',()=>load({...state,page:state.page-1},true));$('list-next').addEventListener('click',()=>load({...state,page:state.page+1},true));
-$('month-picker-open').addEventListener('click',()=>{$('picker-year').value=Number(state.month.slice(0,4));$('picker-year').max=today.slice(0,4);picker();$('month-picker').showModal();});
+$('month-picker-open').addEventListener('click',()=>{$('picker-year').value=Number(state.month.slice(0,4));$('picker-year').max=today.slice(0,4);picker();$('month-picker').show();$('month-picker-open').setAttribute('aria-expanded','true');});
+$('month-picker-close').addEventListener('click',()=>$('month-picker').close());
+$('month-picker').addEventListener('close',()=>{$('month-picker-open').setAttribute('aria-expanded','false');$('month-picker-open').focus();});
+document.addEventListener('click',event=>{if($('month-picker').open&&!$('month-picker').contains(event.target)&&!$('month-picker-open').contains(event.target))$('month-picker').close();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('month-picker').open)$('month-picker').close();});
 $('picker-year').addEventListener('input',picker);$('year-prev').addEventListener('click',()=>{$('picker-year').stepDown();picker();});$('year-next').addEventListener('click',()=>{$('picker-year').stepUp();picker();});
 $('library-retry').addEventListener('click',()=>retry?.());window.addEventListener('popstate',()=>load(libraryState(location.search,today)));
 for(const button of document.querySelectorAll('.coming-soon'))button.addEventListener('click',()=>dialog(`${button.dataset.feature}은 준비 중이에요`,'지금은 홈과 서재에서 당신의 이야기를 남겨보세요.'));

@@ -44,7 +44,7 @@ def status():
  with Session(engine) as db:return {'diaries':db.query(DiaryReport).count(),'saved':db.query(DiaryReport).filter_by(state='saved').count(),'writings':db.query(Writing).count(),'external_ai_calls':0}
 @app.get('/study/status')
 def study(user=Depends(get_current_user)):
- now=get_kst_now();state='ready' if user.id==1 else 'unavailable';return {'user_id':user.id,'server_now':now.replace(tzinfo=KST).isoformat(),'server_date':now.date().isoformat(),'encouragement':{'state':state},'weekly':{'state':state}}
+ now=get_kst_now();state='ready' if user.id==1 else 'insufficient';return {'user_id':user.id,'server_now':now.replace(tzinfo=KST).isoformat(),'server_date':now.date().isoformat(),'encouragement':{'state':state},'weekly':{'state':state}}
 @app.get('/study/weekly/latest')
 def weekly():
  today=get_kst_now().date();return {'diary_analyses':[{'date_str':(today-timedelta(days=i)).isoformat(),'scores':[-.5,.2] if i==6 else [.2+i*.05,.3]} for i in (6,4,0)]}

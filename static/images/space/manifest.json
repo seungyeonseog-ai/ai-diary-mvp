@@ -42,5 +42,9 @@
   "library-background-v1.png": {
     "source": "approved UI asset 2026-11-02",
     "sha256": "f88d66717fc9f7e2673b940db59c4901f09b377180aceab4e2355aee2ed13631"
+  },
+  "envelope-v2.png": {
+    "source": "imagegen 2026-11-03, user card reference: front-facing cream envelope with coral heart",
+    "sha256": "2431e93884994eada9daaa3929f715f75eeb1a4e20cca1f39dd7273ce596c2fb"
   }
 }

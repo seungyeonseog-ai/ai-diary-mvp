@@ -1,4 +1,4 @@
-"""합성 8번 종단 여정. python -m tools.verify_journey (외부 AI 0회)."""
+"""분할 묶음의 합성 회귀 여정. 실제8000의9번 사용자 여정과 구분한다."""
 import json
 from pathlib import Path
 from fastapi.testclient import TestClient
@@ -37,6 +37,15 @@ def verify():
     login = request('POST', '/login', json={'username': 'journey-owner', 'password': 'Journey!2026'})
     owner_token = login['access_token']
     client.headers['Authorization'] = 'Bearer '+owner_token
+    access_before=request('GET','/account/access')
+    for _ in range(2):
+        choice=request('POST','/account/plan-choice',json={'request_id':'choice','plan':'super'})
+        assert choice['grants_access'] is False
+    access_after=request('GET','/account/access')
+    assert access_after['selected_plan']=='super'
+    assert access_before['features']==access_after['features']
+    assert access_before['trial_expires_at']==access_after['trial_expires_at']
+    checks.append('조합의향중복저장/기능권한·체험기간불변')
     assert request('GET', '/library-data/shelf')['total'] == 0
     request('GET', '/study/weekly/latest', status=404)
     request('PUT', '/daily/settings', json={'hour': 22})
@@ -80,16 +89,13 @@ def verify():
     request('POST', '/daily/notices/seen', json={'through_id': notices['through_id']})
     assert request('GET', '/daily/notices')['count'] == 0
     at('2026-11-03T23:00:00')
-    # 완성 일기에는 추가 입력이 금지된다. 명시적으로 폐기하고 새 작성한다.
-    request('POST', f'/writing/{second}/messages', status=409,
-            json={'request_id': 'blocked-c', 'message': '합성 차단 검사'})
-    request('DELETE', f'/writing/diaries/{diary}')
-    third = request('POST', '/writing')['id']
-    additional = message(third, 'c-message')
-    lamp(third, 'c-lamp')
-    result = request('POST', f'/writing/{third}/generate/diary', json={'request_id': 'c-diary'})
-    diary = result['result']['diary_id']
-    request('POST', f'/writing/diaries/{diary}/save', json={'version': 1})
+    # 저장 일기를 유지하며 추가 대화. 원래 일기는 자동 변경되지 않는다.
+    original=request('GET',f'/writing/diaries/{diary}')
+    additional = message(second, 'c-message')
+    lamp(second, 'c-lamp')
+    assert request('GET',f'/writing/diaries/{diary}')==original
+    assert request('GET',f'/writing/{second}')['quota']['extra_used']==1
+    checks.append('저장후추가대화/성공차감/기존일기불변')
     at('2026-11-03T23:50:00')
     assert tick()['daily_analyses'] == 1
     at('2026-11-04T00:00:05')
@@ -114,6 +120,18 @@ def verify():
     before = len(state['generated'])
     assert len(tick()['generated']) == before
     checks.append('첫대화기준7일/3고유날짜/주간API/완료재실행중복없음')
+
+    at('2026-11-10T00:00:00')
+    expired=request('GET','/account/access')
+    assert expired['trial_state']=='expired' and expired['features']==[] and expired['plan']=='free'
+    assert expired['selected_plan']=='super'
+    assert request('GET',f'/writing/diaries/{diary}')['state']=='saved'
+    assert request('GET','/study/weekly/latest')['diary_analyses']
+    assert request('GET',f'/daily/letters/{letter}')['id']==letter
+    request('POST','/account/plan-choice',json={'request_id':'after-trial','plan':'dialogue_weekly'})
+    assert request('GET','/account/access')['features']==[]
+    assert request('GET','/daily/inbox')['state']=='unavailable'
+    checks.append('체험종료자정무료전환/의향유지·변경미부여/기존일기·편지·주간열람')
 
     other = request('POST', '/login', json={'username': 'journey-other', 'password': 'Journey!2026'})
     client.headers['Authorization'] = 'Bearer '+other['access_token']

@@ -19,6 +19,11 @@ async function load(){const current=++sequence;notifyRetry=null;clear();$('weekl
   // 화면이 실제 그려지고 연결된 경우에만 기존 완료 API와 호환한다.
   async function notify(){if(!same()||current!==sequence||!$('weekly-chart').querySelector('svg')?.isConnected)return;try{await json('/study/chart-loading-complete',{method:'POST',data:{analysis_id:m.weekly.id,status:'completed',week_start_date:m.weekly.start_date,week_end_date:m.weekly.end_date}});if(same()&&current===sequence){notifyRetry=null;$('weekly-status').textContent='';$('weekly-retry').hidden=true;}}catch(exc){if(same()&&current===sequence){notifyRetry=notify;$('weekly-status').textContent='차트는 표시됐지만 완료 알림을 보내지 못했어요.';$('weekly-retry').textContent='완료 알림 다시 보내기';$('weekly-retry').hidden=false;}}}
   requestAnimationFrame(()=>void notify());
- }catch(exc){if(!same()||current!==sequence||exc.status===401)return;clear();$('weekly-empty').hidden=exc.status!==404;$('weekly-status').textContent=exc.status===404?'':exc.message;$('weekly-retry').hidden=exc.status===404;}}
+ }catch(exc){if(!same()||current!==sequence||exc.status===401)return;clear();$('weekly-empty').hidden=exc.status!==404;$('weekly-status').textContent=exc.status===404?'':exc.message;$('weekly-retry').hidden=exc.status===404;
+  if(exc.status===404){$('weekly-empty-title').textContent='아직 저장된 주간 결과가 없어요.';$('weekly-empty-copy').textContent='';$('weekly-empty-hint').hidden=true;
+   try{const access=await json('/account/access');if(!same()||current!==sequence)return;const allowed=access.features.includes('weekly');$('weekly-empty-title').textContent=allowed?'조금만 더 기록해볼까요?':'무료 이용 중에는 새 주간 차트가 제공되지 않아요.';$('weekly-empty-copy').textContent=allowed?'체험 기간 안에 조건을 채우면 주간 차트를 확인할 수 있어요.':'이전에 받은 주간 결과는 계속 볼 수 있어요. 이용권 페이지에서 원하는 조합을 선택할 수 있어요.';$('weekly-empty-hint').hidden=!allowed;}
+   catch(failure){if(same()&&current===sequence&&failure.status!==401){$('weekly-status').textContent='이용 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.';$('weekly-retry').hidden=false;}}
+  }
+ }}
 $('weekly-retry').addEventListener('click',()=>notifyRetry?notifyRetry():load());window.addEventListener('space:identity-cleared',()=>{sequence++;notifyRetry=null;clear();$('weekly-status').textContent='';});
 if(!token())void expire();else void load();

@@ -193,6 +193,65 @@ class WritingFlowTests(unittest.TestCase):
             self.assertEqual(db.query(WritingOperation).count(), 1)
             self.assertEqual(db.query(ChatMessage).filter_by(role="user").count(), 1)
 
+    def test_after_draft_and_save_extra_dialogue_keeps_diary_and_daily_usage(self):
+        writing, diary_id = self.draft()
+        original = self.client.get(f"/writing/diaries/{diary_id}").json()
+        self.message(writing,"초안 후 이야기","after-draft")
+        self.generate(writing,key="after-draft")
+        self.client.post(f"/writing/diaries/{diary_id}/save",json={"version":1})
+        self.message(writing,"저장 후 이야기","after-save")
+        self.generate(writing,key="after-save")
+        detail = self.client.get(f"/writing/diaries/{diary_id}").json()
+        self.assertEqual((detail["title"],detail["body"]),(original["title"],original["body"]))
+        self.assertEqual(detail["state"],"saved")
+        quota = self.client.get(f"/writing/{writing}").json()["quota"]
+        self.assertEqual((quota["base_remaining"],quota["extra_used"],quota["extra_remaining"]),(0,2,0))
+        self.assertEqual(self.client.post(f"/writing/{writing}/messages",json={"request_id":"denied","message":"추가"}).status_code,409)
+        self.client.delete(f"/writing/diaries/{diary_id}")
+        self.now += timedelta(seconds=1)
+        new = self.start()
+        quota = self.client.get(f"/writing/{new}").json()["quota"]
+        self.assertEqual((quota["base_remaining"],quota["extra_used"],quota["extra_remaining"]),(1,2,0))
+
+    def test_failed_extra_is_not_charged_and_retry_is_charged_once(self):
+        writing = self.start();self.message(writing);self.generate(writing)
+        self.message(writing,key="extra-message")
+        self.ai.side_effect = RuntimeError("synthetic outage")
+        self.generate(writing,key="retry-extra",status=503)
+        quota = self.client.get(f"/writing/{writing}").json()["quota"]
+        self.assertEqual((quota["extra_used"],quota["extra_remaining"]),(0,2))
+        self.ai.side_effect = None;self.ai.return_value = {"bubbles":["합성 답변"]}
+        self.generate(writing,key="retry-extra");self.generate(writing,key="retry-extra")
+        quota = self.client.get(f"/writing/{writing}").json()["quota"]
+        self.assertEqual((quota["extra_used"],quota["extra_remaining"]),(1,1))
+
+    def test_extra_pending_reservation_expiry_and_retry_rechecks_rights(self):
+        self.now = datetime(2026,11,8,23,59,50)
+        writing = self.start();self.message(writing);self.generate(writing)
+        self.message(writing,key="extra")
+        op,_ = service.claim_operation(self.engine,1,writing,"boundary","lamp")
+        quota = self.client.get(f"/writing/{writing}").json()["quota"]
+        self.assertEqual((quota["extra_used"],quota["extra_reserved"],quota["extra_remaining"]),(0,1,1))
+        # 가입11/02의 체험 종료는11/09자정. AI 처리 도중 만료면 차감하지 않는다.
+        self.now = datetime(2026,11,9)
+        with self.assertRaises(service.WritingError):
+            service.complete_operation(self.engine,1,op.id,op.lease_token,{"bubbles":["늦은 합성"]})
+        service.fail_operation(self.engine,1,op.id,op.lease_token)
+        with Session(self.engine) as db:
+            self.assertEqual(db.query(WritingOperation).filter_by(quota_kind="extra",state="succeeded").count(),0)
+
+    def test_free_discard_repeatedly_restores_base_and_preserves_sources(self):
+        self.now = datetime(2026,11,10,12)
+        for index in range(3):
+            writing = self.start();self.message(writing,key=f"msg{index}")
+            self.generate(writing,key=f"lamp{index}")
+            self.client.delete(f"/writing/{writing}")
+            self.now += timedelta(seconds=1)
+        with Session(self.engine) as db:
+            self.assertEqual(len(service.day_messages(db,1,"2026-11-10")),3)
+        state = self.client.get(f"/writing/{self.start()}").json()["quota"]
+        self.assertEqual((state["base_remaining"],state["extra_remaining"]),(1,0))
+
     def test_failed_diary_keeps_source_fixed_until_retry(self):
         writing=self.start();self.message(writing);self.generate(writing)
         self.ai.side_effect=RuntimeError("synthetic diary failure")

@@ -11,6 +11,7 @@ from app.models.db.daily_model import ResultNotice
 from app.services.writing_service import transaction,day_messages,format_users
 from app.repositories.weekly_analysis_repository import SOURCE_IDS_KEY
 from app.utils.time_utils import get_kst_now
+from app.services.access_service import permits
 
 
 def cutoff(day):return datetime.fromisoformat(day).replace(hour=23,minute=50)
@@ -47,7 +48,7 @@ def dispatch(bind,now=None):
                     daily=db.query(AnalysisJob).filter(AnalysisJob.user_id==uid,AnalysisJob.kind=='daily',
                         AnalysisJob.end_date>=start.date().isoformat(),AnalysisJob.end_date<=end).order_by(AnalysisJob.end_date).all()
                     active=[j for j in daily if j.source_ids]
-                    if len(active)<3:
+                    if len(active)<3 or not permits(db,uid,'weekly',now):
                         db.add(AnalysisJob(id=key,user_id=uid,kind='weekly',start_date=start.date().isoformat(),end_date=end,source_ids=[],state='skipped',attempts=0))
                     elif len(daily)==7 and all(j.state in ('done','skipped') for j in daily):
                         db.add(AnalysisJob(id=key,user_id=uid,kind='weekly',start_date=start.date().isoformat(),end_date=end,source_ids=[j.result_id for j in active],state='pending',attempts=0))
@@ -65,6 +66,7 @@ def checkpoint(bind,uid,key,lease,**values):
 
 def run(bind,key,generate=None,now=None):
     from app.services.weekly_cycle_ai import generate as real_generate,validate_daily,validate_weekly
+    fixed_clock=now is not None
     generate=generate or real_generate;now=now or get_kst_now()
     with Session(bind) as db:
         job=db.get(AnalysisJob,key)
@@ -73,6 +75,8 @@ def run(bind,key,generate=None,now=None):
     with transaction(bind,uid) as db:
         job=db.get(AnalysisJob,key)
         if job.state in ('done','skipped') or (job.retry_at and job.retry_at>now) or (job.state=='running' and job.lease_until and job.lease_until>now):return
+        if job.kind=='weekly' and not permits(db,uid,'weekly',now):
+            job.state='skipped';job.lease_until=None;return
         lease=str(uuid4());job.state='running';job.lease_token=lease;job.lease_until=now+timedelta(minutes=10);job.attempts+=1
         if job.kind=='daily':
             source=format_users(db.query(ChatMessage).filter(ChatMessage.user_id==uid,ChatMessage.role=='user',ChatMessage.id.in_(job.source_ids)).order_by(ChatMessage.timestamp,ChatMessage.id).all())
@@ -88,6 +92,9 @@ def run(bind,key,generate=None,now=None):
         else:
             for phase in ('emotion','keyword','comprehensive'):
                 if phase not in result:
+                    with Session(bind) as db:
+                        if not permits(db,uid,'weekly',now if fixed_clock else get_kst_now()):
+                            raise PermissionError('Weekly access expired during generation')
                     value=validate_weekly(phase,generate(phase,{'days':source,'previous':result}))
                     result={**result,phase:value};checkpoint(bind,uid,key,lease,result=result)
         with transaction(bind,uid) as db:
@@ -95,6 +102,8 @@ def run(bind,key,generate=None,now=None):
             if live.state!='running' or live.lease_token!=lease:raise RuntimeError('Analysis lease lost')
             if live.result_id:
                 live.state='done';return
+            if job.kind=='weekly' and not permits(db,uid,'weekly',now if fixed_clock else get_kst_now()):
+                live.state='skipped';live.lease_until=None;return
             if job.kind=='daily':
                 row=DiaryAnalysisReport(user_id=uid,date_str=job.end_date,timestamp=datetime.fromisoformat(job.end_date),
                     emotions=result['emotions'],scores=result['scores'],keywords=result['keywords'],keyword_descriptions=result['keyword_descriptions'],summary=result['summary'],is_used_in_weekly=False)
@@ -107,7 +116,9 @@ def run(bind,key,generate=None,now=None):
                 db.query(DiaryAnalysisReport).filter(DiaryAnalysisReport.user_id==uid,DiaryAnalysisReport.report_id.in_(job.source_ids)).update({'is_used_in_weekly':True},synchronize_session=False)
             live.state='done';live.lease_until=None;live.retry_at=None;live.error_type=None
     except Exception as exc:
-        checkpoint(bind,uid,key,lease,state='retry',lease_until=None,retry_at=now+timedelta(minutes=min(60,2**min(job.attempts,6))),error_type=type(exc).__name__)
+        expired = isinstance(exc, PermissionError)
+        checkpoint(bind,uid,key,lease,state='skipped' if expired else 'retry',lease_until=None,
+                   retry_at=None if expired else now+timedelta(minutes=min(60,2**min(job.attempts,6))),error_type=type(exc).__name__)
 
 
 def status(db,uid,now=None):

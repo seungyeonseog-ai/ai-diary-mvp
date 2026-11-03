@@ -19,6 +19,8 @@ from app.models.db.daily_model import ResultNotice
 from app.core.weekly_migration import migrate_weekly_schema
 from app.services import weekly_cycle_service as svc
 from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository
+from app.services.access_service import ensure_account
+from app.models.db.access_model import AccountAccess
 
 DAILY={'emotions':['기쁨','피곤'],'scores':[.6,-.4],'keywords':['정리'],'keyword_descriptions':['정리를 마쳤어요.'],'summary':'합성 하루였어요.'}
 def fake(kind,data):
@@ -34,7 +36,9 @@ class WeeklyCycleTests(unittest.TestCase):
         Base.metadata.create_all(self.engine);migrate_weekly_schema(self.engine,datetime(2026,11,1))
         self.ai=Mock(side_effect=fake)
         with Session(self.engine) as db:
-            for uid in (1,2):db.add(User(id=uid,username=f'w{uid}',email=f'w{uid}@example.org',nickname='합성',hashed_password='unused'))
+            for uid in (1,2):db.add(User(id=uid,username=f'w{uid}',email=f'w{uid}@example.org',nickname='합성',hashed_password='unused',registered_at=datetime(2026,11,1)))
+            db.flush()
+            for uid in (1,2):ensure_account(db,db.get(User,uid))
             db.commit()
     def tearDown(self):self.engine.dispose();self.tmp.cleanup()
     def chat(self,day,hour=12,minute=0,uid=1,role='user'):
@@ -45,12 +49,41 @@ class WeeklyCycleTests(unittest.TestCase):
             for key in svc.dispatch(self.engine,now):svc.run(self.engine,key,generate=self.ai,now=now)
     def count(self,model):
         with Session(self.engine) as db:return db.query(model).count()
+    def test_expired_weekly_access_keeps_daily_but_skips_weekly(self):
+        with Session(self.engine) as db:
+            row=db.get(AccountAccess,1);row.trial_started_at=None;row.trial_expires_at=None
+            db.commit()
+        for day in (1,3,7):self.chat(day)
+        self.tick(datetime(2026,11,7,23,51))
+        self.assertEqual(self.count(DiaryAnalysisReport),3)
+        self.assertEqual(self.count(WeeklyAnalysisReport),0)
+        self.assertEqual([c.args[0] for c in self.ai.call_args_list],['daily']*3)
+
+    def test_weekly_right_revoked_during_generation_publishes_nothing(self):
+        for day in (1,3,7):self.chat(day)
+        original=self.ai.side_effect
+        def revoked(kind,*args):
+            result=original(kind,*args)
+            if kind=='emotion':
+                with Session(self.engine) as db:
+                    row=db.get(AccountAccess,1);row.trial_started_at=None;row.trial_expires_at=None
+                    db.commit()
+            return result
+        self.ai.side_effect=revoked
+        self.tick(datetime(2026,11,7,23,51))
+        self.assertEqual(self.count(WeeklyAnalysisReport),0)
+        self.assertEqual(self.count(ResultNotice),0)
+        self.assertNotIn('keyword',[c.args[0] for c in self.ai.call_args_list])
+        with Session(self.engine) as db:
+            job=db.get(AnalysisJob,'1:weekly:2026-11-07')
+            self.assertEqual(job.state,'skipped');self.assertIsNone(job.retry_at)
     def test_first_dialogue_anchor_not_registration_and_no_day3_weekly(self):
         for day in (2,3,4):self.chat(day)
         self.tick(datetime(2026,11,4,23,51))
         with Session(self.engine) as db:self.assertEqual(db.get(WeeklyClock,1).anchor_date,'2026-11-02')
         self.assertEqual(self.count(DiaryAnalysisReport),3);self.assertEqual(self.count(WeeklyAnalysisReport),0)
-        self.tick(datetime(2026,11,8,23,51));self.assertEqual(self.count(WeeklyAnalysisReport),1)
+        # 가입 다음날 첫 사용이면 첫 주간 도착 전 체험이 끝나며 연장하지 않는다.
+        self.tick(datetime(2026,11,8,23,51));self.assertEqual(self.count(WeeklyAnalysisReport),0)
     def test_cutoff_and_midnight_finish_original_day(self):
         before=self.chat(1,23,49);self.chat(1,23,55)
         keys=svc.dispatch(self.engine,datetime(2026,11,1,23,50))
@@ -82,7 +115,7 @@ class WeeklyCycleTests(unittest.TestCase):
     def test_missing_daily_recovery_blocks_weekly_until_ready(self):
         for day in (1,3,7):self.chat(day)
         self.ai.side_effect=RuntimeError();self.tick(datetime(2026,11,7,23,51));self.assertEqual(self.count(WeeklyAnalysisReport),0)
-        self.ai.side_effect=fake;self.tick(datetime(2026,11,8,0,5));self.assertEqual(self.count(WeeklyAnalysisReport),1)
+        self.ai.side_effect=fake;self.tick(datetime(2026,11,7,23,59));self.assertEqual(self.count(WeeklyAnalysisReport),1)
     def test_phase_checkpoint_avoids_repeat_successful_calls(self):
         for day in (1,3,7):self.chat(day)
         self.tick(datetime(2026,11,7,23,50))
@@ -96,7 +129,7 @@ class WeeklyCycleTests(unittest.TestCase):
         self.ai.side_effect=fail_keyword;self.tick(datetime(2026,11,7,23,51))
         self.assertEqual(self.count(WeeklyAnalysisReport),0)
         before=sum(c.args[0]=='emotion' for c in self.ai.call_args_list)
-        self.ai.side_effect=fake;self.tick(datetime(2026,11,8,0,5))
+        self.ai.side_effect=fake;self.tick(datetime(2026,11,7,23,59))
         self.assertEqual(self.count(WeeklyAnalysisReport),1)
         self.assertEqual(sum(c.args[0]=='emotion' for c in self.ai.call_args_list),before)
     def test_eligibility_ignores_other_account_and_assistant(self):

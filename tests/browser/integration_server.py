@@ -20,7 +20,8 @@ from app.models.db.weekly_cycle_model import AnalysisJob
 from app.models.db.writing_model import SummaryRange
 from app.models.db.study_model import DiaryAnalysisReport, WeeklyAnalysisReport
 from sqlalchemy.orm import Session
-from fastapi import HTTPException
+from fastapi import HTTPException, Depends
+from app.api.dependencies.auth_dependencies import get_current_user
 
 app, engine = space.app, space.engine
 clock = {'now': datetime(2026, 11, 3, 12)}
@@ -39,6 +40,14 @@ app.include_router(daily_router.router)
 app.include_router(library_router.router)
 generated = []
 indexed = set()
+chart_notifications = []
+# 제품 차트 완료 API의 Redis 발행만 합성 경계로 분리한다.
+app.router.routes[:] = [route for route in app.router.routes if getattr(route,'path',None)!='/study/chart-loading-complete']
+
+@app.post('/study/chart-loading-complete')
+def chart_complete(data:dict,user=Depends(get_current_user)):
+    chart_notifications.append({'user_id':user.id,'analysis_id':data.get('analysis_id')})
+    return {'status':'success','message':'격리 차트 완료 확인'}
 
 
 def daily_generate(kind, source, nickname='', memories=None):
@@ -87,7 +96,7 @@ def tick():
 def evidence():
     with Session(engine) as db:
         return {'now': clock['now'].isoformat(), 'external_ai_calls': 0,
-                'database': str(space.fixture_path), 'generated': generated,
+                'database': str(space.fixture_path), 'generated': generated,'chart_notifications':chart_notifications,
                 'summary_ranges': [{'date': r.source_date, 'ids': r.source_ids} for r in db.query(SummaryRange)],
                 'letters': db.query(LetterDelivery).count(), 'notices': db.query(ResultNotice).count(),
                 'daily_analyses': db.query(DiaryAnalysisReport).count(),

@@ -1,6 +1,6 @@
 {% extends "ui_base.html" %}
 {% block body_class %}space-page{% endblock %}
-{% block head %}{% if diary_id %}<link rel="stylesheet" href="/static/css/library.css?v=20261103-6a">{% endif %}{% endblock %}
+{% block head %}{% if diary_id %}<link rel="stylesheet" href="/static/css/library.css?v=20261103-7a">{% endif %}{% endblock %}
 {% block content %}
 {% include "space_sidebar.html" %}
 <main id="workspace" class="workspace" aria-busy="true" data-diary-id="{{diary_id|default('')}}">
@@ -32,4 +32,4 @@
  <section id="error-panel" class="error-panel" hidden role="alert"><p id="error-message"></p><button id="retry-action" class="secondary">다시 시도</button></section>
 </main>
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261103-6a"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261103-7a"></script>{% endblock %}

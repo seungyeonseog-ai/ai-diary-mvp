@@ -283,33 +283,18 @@ class Bundle2Tests(unittest.TestCase):
         publish.assert_not_called()
         self.assertEqual(self.counts(), (1, 0))
 
-    def test_event_task_closes_session_and_notifies_only_on_saved_result(self):
-        publish = Mock()
-        with patch.object(task, 'SessionLocal', self.sessions), patch.object(task.redis_client, 'publish', publish):
-            task.check_weekly_analysis_after_diary_save.run(1)
-            task.check_weekly_analysis_after_diary_save.run(1)
-        self.assertEqual(publish.call_count, 1)
-        self.assertEqual(self.counts(), (1, 0))
-        self.assertEqual(self.engine.pool.checkedout(), 0)
+    def test_retired_event_task_does_not_generate_old_batch(self):
+        with patch.object(task,'run_weekly_analysis_and_notify') as old:
+            self.assertEqual(task.check_weekly_analysis_after_diary_save.run(1)['status'],'replaced_by_weekly_cycles')
+            old.assert_not_called()
 
-    def test_periodic_and_event_paths_share_the_same_commit_policy(self):
-        # 실제 주기 태스크 함수만 가져와 외부 모델/예약 스케줄 기동 없이 실행한다.
-        path = Path(__file__).resolve().parents[1] / 'app/services/celery_app.py'
-        node = next(n for n in ast.parse(path.read_text(encoding='utf-8')).body
-                    if isinstance(n, ast.FunctionDef) and n.name == 'check_weekly_analysis_conditions_periodic')
-        node.decorator_list = []
-        def isolated():
-            with self.sessions() as db:
-                yield db
-        publish = Mock()
-        scope = {'get_db': isolated, 'logger': logging.getLogger('bundle2.periodic'),
-                 'WeeklyAnalysisRepository': WeeklyAnalysisRepository,
-                 'redis_client': Mock(publish=publish)}
-        exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), scope)
-        scope[node.name]()
-        task.run_weekly_analysis_and_notify(self.db, 1, publish)
-        self.assertEqual(self.counts(), (1, 0))
-        self.assertEqual(publish.call_count, 1)
+    def test_periodic_delegates_to_new_cycle_dispatch(self):
+        path=Path(__file__).resolve().parents[1]/'app/services/celery_app.py'
+        node=next(n for n in ast.parse(path.read_text(encoding='utf-8')).body if isinstance(n,ast.FunctionDef) and n.name=='check_weekly_analysis_conditions_periodic')
+        node.decorator_list=[]
+        dispatch=Mock();scope={'daily_diary_analysis':dispatch}
+        exec(compile(ast.Module(body=[node],type_ignores=[]),str(path),'exec'),scope)
+        scope[node.name]();dispatch.assert_called_once_with()
 
 
 if __name__ == '__main__':

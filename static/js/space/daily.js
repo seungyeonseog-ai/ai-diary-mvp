@@ -1,4 +1,4 @@
-import {json,node,token,owner,toast,confirm} from './ui.js?v=20261103-6a';
+import {json,node,token,owner,toast,confirm} from './ui.js?v=20261103-7a';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 let stopped=false,timer,lastIds=null,snapshot=0,requesting=false,letterId=null,revision=0;
 const panel=node('dialog','ui-dialog daily-panel');panel.setAttribute('aria-label','편지와 알림');document.body.append(panel);
@@ -57,7 +57,7 @@ async function refresh(){
  try{const data=await json('/daily/notices');if(!same())return;
   snapshot=data.through_id;badge(data.count);
   const ids=new Set(data.items.map(x=>x.id));
-  if(lastIds!==null){const arrivals=data.items.filter(x=>!lastIds.has(x.id)&&!x.seen);if(arrivals.length){const banner=document.getElementById('daily-arrival');banner.hidden=false;banner.textContent=arrivals.some(x=>x.kind==='letter')?'새 응원 편지가 도착했어요. 눌러서 확인해 보세요.':'새 주간 차트가 도착했어요. 서재에서 확인해 보세요.';banner.onclick=()=>{banner.hidden=true;if(arrivals.some(x=>x.kind==='letter'))void list();else location.assign('/library');};window.dispatchEvent(new Event('daily:changed'));}}
+  if(lastIds!==null){const arrivals=data.items.filter(x=>!lastIds.has(x.id)&&!x.seen);if(arrivals.length){const banner=document.getElementById('daily-arrival');banner.hidden=false;banner.textContent=arrivals.some(x=>x.kind==='letter')?'새 응원 편지가 도착했어요. 눌러서 확인해 보세요.':'새 주간 차트가 도착했어요. 서재에서 확인해 보세요.';banner.onclick=()=>{banner.hidden=true;if(arrivals.some(x=>x.kind==='letter'))void list();else location.assign('/weekly');};window.dispatchEvent(new Event('daily:changed'));}}
   const initial=lastIds===null;lastIds=ids;
   if(initial&&location.pathname==='/library'){await json('/daily/notices/seen',{method:'POST',data:{through_id:snapshot}});if(same())badge(0);}
  }catch(exc){if(same()){const status=document.getElementById('daily-sync-status');if(status)status.textContent='알림 연결을 확인 중이에요.';}}

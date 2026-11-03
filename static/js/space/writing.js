@@ -1,4 +1,4 @@
-import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261103-6a';
+import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261103-7a';
 let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null,epoch=0,activeController=null,photoURLs=[],failedPhotos=[];
 const detailId=$('workspace').dataset.diaryId||null;
 const requestedBack=safeNext(new URLSearchParams(location.search).get('return')||'/library','/library');

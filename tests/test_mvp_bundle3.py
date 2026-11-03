@@ -93,7 +93,7 @@ class Bundle3Tests(unittest.TestCase):
         weekly = self.weekly()
         data = self.status()
         self.assertEqual(data['encouragement'], {'state':'ready','id':letter.encouragement_id,'date':'2026-10-29'})
-        self.assertEqual(data['weekly'], {'state':'ready','analysis_id':weekly.analysis_id})
+        self.assertEqual(data['weekly']['state'],'ready');self.assertEqual(data['weekly']['analysis_id'],weekly.analysis_id)
         self.redis.publish.assert_not_called()  # 단순 상태 조회가 읽음 처리하지 않음.
         self.assertNotIn('SYNTHETIC_PRIVATE', json.dumps(data))
 
@@ -178,12 +178,12 @@ class Bundle3Tests(unittest.TestCase):
         self.assertEqual(response.json()['weekly_analysis']['id'], own.analysis_id)
         self.assertEqual(len(response.json()['diary_analyses']),7)
 
-    def test_pending_weekly_is_seven_unused_reports(self):
+    def test_unused_legacy_reports_do_not_bypass_cycle(self):
         row = self.weekly()
         self.db.delete(row)
         self.db.query(DiaryAnalysisReport).update({'is_used_in_weekly':False})
         self.db.commit()
-        self.assertEqual(self.status()['weekly']['state'], 'pending')
+        self.assertEqual(self.status()['weekly']['state'], 'insufficient')
 
     def test_latest_today_letter_uses_stable_id_order(self):
         self.letter(content='first')

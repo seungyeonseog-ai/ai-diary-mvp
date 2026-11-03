@@ -368,7 +368,9 @@ async def get_seven_day_report(
                 "emotion_trend": weekly_data.emotion_trend_result,
                 "keyword_patterns": weekly_data.keyword_pattern_result,
                 "comprehensive_pattern_result": weekly_data.comprehensive_pattern_result,
-                "overall_assessment": weekly_data.comprehensive_pattern_result.get("overall_assessment", "분석 중") if weekly_data.comprehensive_pattern_result else "분석 중"
+                "overall_assessment": weekly_data.comprehensive_pattern_result.get("overall_assessment", "분석 중") if isinstance(weekly_data.comprehensive_pattern_result,dict) else "분석 중",
+                "period_start": weekly_data.week_start_date.date().isoformat(),
+                "period_end": weekly_data.week_end_date.date().isoformat(),
             },
             "diary_analyses": [
                 {

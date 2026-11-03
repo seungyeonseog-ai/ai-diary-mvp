@@ -37,14 +37,5 @@ def run_weekly_analysis_and_notify(db, user_id, publish):
 
 @shared_task
 def check_weekly_analysis_after_diary_save(user_id: int):
-    """DiaryAnalysisReport 저장 후 주간 분석 체크"""
-    print(f"🔄 주간 분석 체크 시작: user_id={user_id}")
-    
-    db = SessionLocal()
-    try:
-        run_weekly_analysis_and_notify(db, user_id, redis_client.publish)
-            
-    except Exception as e:
-        logger.error("weekly_event_failed user_id=%s error_type=%s", user_id, type(e).__name__)
-    finally:
-        db.close()
+    """구형 저장 이벤트는 미사용7건 생성으로 돌아가지 않는다."""
+    return {'status':'replaced_by_weekly_cycles'}

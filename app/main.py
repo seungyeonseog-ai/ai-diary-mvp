@@ -29,6 +29,7 @@ from pathlib import Path
 from fastapi.staticfiles import StaticFiles  # 추가 필요
 from app.api.routers.daily_router import router as daily_router
 from app.core.daily_migration import require_daily_schema
+from app.core.weekly_migration import require_weekly_schema
 from app.models.db import daily_model
 
 
@@ -56,6 +57,7 @@ logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 Base.metadata.create_all(bind=engine) # 클래스 정의생성해서 테이블 만들기
 require_writing_schema(engine)
 require_daily_schema(engine)
+require_weekly_schema(engine)
 
 
 app = FastAPI()

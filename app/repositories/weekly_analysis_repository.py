@@ -68,8 +68,9 @@ class WeeklyAnalysisRepository:
         result = analysis.comprehensive_pattern_result
         if isinstance(result, dict) and SOURCE_IDS_KEY in result:
             ids = result[SOURCE_IDS_KEY]
-            if (not isinstance(ids, list) or len(ids) != 7 or
-                    any(type(i) is not int or i <= 0 for i in ids) or len(set(ids)) != 7):
+            allowed=range(3,8) if result.get('_schema_version')==2 else (7,)
+            if (not isinstance(ids, list) or len(ids) not in allowed or
+                    any(type(i) is not int or i <= 0 for i in ids) or len(set(ids)) != len(ids)):
                 raise SourceResolutionError()
             rows = self.db.query(DiaryAnalysisReport).filter(
                 DiaryAnalysisReport.user_id == analysis.user_id,
@@ -77,6 +78,10 @@ class WeeklyAnalysisRepository:
             ).all()
             if len(rows) != len(ids):
                 raise SourceResolutionError()
+            if result.get('_schema_version')==2:
+                dates=[r.date_str for r in rows]
+                if len(set(dates))!=len(dates) or any(not analysis.week_start_date.date().isoformat()<=d<=analysis.week_end_date.date().isoformat() for d in dates):
+                    raise SourceResolutionError()
             by_id = {row.report_id: row for row in rows}
             return [by_id[i] for i in ids]
 

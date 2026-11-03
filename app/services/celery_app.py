@@ -248,56 +248,21 @@ def check_diary_conditions_periodic():
 # 4) 다이어리 분석 스케줄러
 @celery.task
 def daily_diary_analysis():
-    """매일 19:00에 실행되는 다이어리 분석"""
-    logger.info("🕐 일일 다이어리 분석 시작")
+    """고정23:50 일일 분석과 첫대화 기준7일 주기를 복구/점검한다."""
+    from app.core.connection import engine
+    from app.services.weekly_cycle_service import dispatch
+    for key in dispatch(engine):
+        run_analysis_job.delay(key)
 
-    now = get_kst_now()  # 시스템 로컬 시간 사용 (KST)
 
-    try:
-        db = next(get_db())
-        # 모든 사용자 조회
-        users = db.query(User).all()
+@celery.task
+def run_analysis_job(key):
+    from app.core.connection import engine
+    from app.services.weekly_cycle_service import run
+    from app.services.daily_service import publish_notices
+    run(engine,key)
+    publish_notices(engine,redis_client.publish)
 
-        for user in users:
-            try:
-                # 2. 토큰 수 체크
-                chat_repo = TodayChatMessageRepository()
-                combined_content, total_tokens = chat_repo.get_today_user_chat_content_and_tokens(user.id)
-
-                if total_tokens < 250:  # 250 토큰으로 수정
-                    logger.info(f"❌ 토큰 수 부족: user_id={user.id}, tokens={total_tokens}")
-                    continue
-
-                # 3. 오늘 분석 결과 있는지 확인
-                today = now.strftime("%Y-%m-%d")
-                existing = db.query(DiaryAnalysisReport).filter(
-                    DiaryAnalysisReport.user_id == user.id,
-                    DiaryAnalysisReport.date_str == today
-                ).first()
-
-                if existing:
-                    logger.info(f"ℹ️ 이미 오늘 분석 완료: user_id={user.id}")
-                    continue
-
-                # 4. 조건 충족하면 service 실행
-                service = DiaryAnalysisService(db)
-                result = service.analyze_user_diary(user.id)
-
-                if result:
-                    logger.info(f"✅ 다이어리 분석 완료: user_id={user.id}")
-                else:
-                    logger.error(f"❌ 다이어리 분석 실패: user_id={user.id}")
-
-            except Exception as e:
-                logger.error(f"❌ 사용자 {user.id} 분석 실패: {str(e)}")
-                continue
-
-    except Exception as e:
-        logger.error(f"❌ 일일 다이어리 분석 실패: {str(e)}")
-    finally:
-        db.close()
-
-    logger.info("✅ 일일 다이어리 분석 완료")
 
 
 
@@ -363,30 +328,8 @@ def run_daily_job(key):
 
 @celery.task
 def check_weekly_analysis_conditions_periodic():
-    """주간 분석 조건 확인 (3분마다 실행)"""
-    logger.info("🔄 주간 분석 조건 체크 시작")
-    try:
-        db = next(get_db())
-        weekly_repo = WeeklyAnalysisRepository(db)
-
-        # 1. 7일치 미사용 리포트가 있는 사용자들 조회
-        user_ids = [user.id for user in weekly_repo.get_users_with_unused_reports(7)]
-        db.rollback()  # 대상 조회의 읽기 트랜잭션을 AI 호출 전에 끝낸다.
-        from app.tasks.diary_analysis_event import run_weekly_analysis_and_notify
-
-        for user_id in user_ids:
-            try:
-                run_weekly_analysis_and_notify(db, user_id, redis_client.publish)
-
-            except Exception as e:
-                logger.error("weekly_periodic_user_failed user_id=%s error_type=%s", user_id, type(e).__name__)
-
-    except Exception as e:
-        logger.error("weekly_periodic_failed error_type=%s", type(e).__name__)
-    finally:
-        db.close()
-
-    logger.info("✅ 주간 분석 조건 체크 완료")
+    # 구형 Beat가 남긴 작업도 동일 영속 디스패치로 연결한다.
+    daily_diary_analysis()
 
 
 # 6) 스케줄 설정
@@ -401,11 +344,7 @@ celery.conf.beat_schedule = {
     },
     'daily-diary-analysis': {
         'task': 'app.services.celery_app.daily_diary_analysis',
-        'schedule': 300.0,  # 5분마다 확인
-    },
-    'check-weekly-analysis-conditions': {
-        'task': 'app.services.celery_app.check_weekly_analysis_conditions_periodic',
-        'schedule': 180.0,  # 3분마다 (180초)
+        'schedule': 60.0,  # 23:50 경계와 실패 복구 점검
     },
     'daily-reset-notifications': {
         'task': 'app.services.celery_app.daily_reset_notifications',

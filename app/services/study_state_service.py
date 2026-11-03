@@ -6,6 +6,7 @@ from app.models.db.study_model import (
 from app.utils.time_utils import KST, get_kst_now
 from app.models.db.daily_model import LetterDelivery, DailyJob, DailySettings
 from app.services.daily_service import current_hour
+from app.services.weekly_cycle_service import status as cycle_status
 
 
 def today_encouragement(db, user_id, now):
@@ -40,10 +41,7 @@ def study_status(db, user_id):
         DiaryReport.state == 'saved',
         DiaryReport.timestamp >= start, DiaryReport.timestamp < end
     ).first()
-    unused = db.query(DiaryAnalysisReport).filter(
-        DiaryAnalysisReport.user_id == user_id,
-        DiaryAnalysisReport.is_used_in_weekly == False
-    ).count()
+    cycle=cycle_status(db,user_id,now)
     day=now.date().isoformat()
     pref=db.get(DailySettings,user_id)
     hour=current_hour(pref,day) if pref else 22
@@ -62,7 +60,8 @@ def study_status(db, user_id):
             'date': letter.timestamp.date().isoformat() if letter else None,
         },
         'weekly': {
-            'state': 'ready' if weekly else 'pending' if unused >= 7 else 'insufficient',
+            'state': 'ready' if weekly else 'pending' if cycle['state']=='retry' else 'insufficient',
             'analysis_id': weekly.analysis_id if weekly else None,
+            'cycle':cycle,
         }
     }

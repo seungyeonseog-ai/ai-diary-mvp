@@ -47,6 +47,8 @@ async def login_page(request: Request):
 
 @router.get("/mypage_edit", response_class=HTMLResponse)
 async def mypage_edit(request: Request):
+    if request.query_params.get('tab')=='study' and request.query_params.get('panel')=='weekly':
+        return RedirectResponse('/weekly',status_code=307)
     if request.query_params.get('tab')=='study' and request.query_params.get('legacy')!='1':
         return RedirectResponse('/library',status_code=307)
     return templates.TemplateResponse("mypage_edit.html", {"request": request})
@@ -128,3 +130,8 @@ print("✅ router 변수 존재 여부:", 'router' in globals())
 @router.get('/letters',response_class=HTMLResponse)
 def letters_page(request:Request):
     return templates.TemplateResponse('letters.html',{'request':request,'active_tab':'library'},headers={'Cache-Control':'no-store'})
+
+
+@router.get('/weekly',response_class=HTMLResponse)
+def weekly_page(request:Request):
+    return templates.TemplateResponse('weekly.html',{'request':request,'active_tab':'library'},headers={'Cache-Control':'no-store'})

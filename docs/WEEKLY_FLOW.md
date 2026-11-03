@@ -42,3 +42,16 @@ WeeklyActivation/WeeklyClock/AnalysisJob 새테이블. 사용자/종류/기간�
 - 실제8000본인인증GET /study/status200/new weekly cycle waiting_dialogue/신규활성화1·clock0·job0 확인. 운영원문출력/사용자설정·대화삽입없음. 실제8000대8018 화면자산15경로동일해시(공통11+weekly4).
 - 업그레이드후에도브라우저도구는Local browser use is disabled in Work settings반환. 현재실제3탭렌더/클릭/키보드동작/오류안내/기존열린화면갱신은미검증이다. API/자동검사·파일동일성만으로이부분완료를선언하지않는다. 후속브라우저권한복구시8018합성실제AI자료와8000실제상태를구분해검사한다.
 - 변경파일군:weekly_cycle_model/service/ai·weekly_migration와백업이행도구;Celery/구형이벤트대체·main스키마검사;source IDs3~7일조회/기존7건호환·상태API;weekly템플릿/JS/model/CSS·서재/구형URL연결·자산7a;날짜/계정/재시도/프론트·격리서버/실제AI검증도구. DB/로그/비밀값/모델은Git제외.
+
+## 3탭 UX 구성 정정·실제 브라우저 확인 — 2026-11-03
+
+사용자가 기존4영역+날짜점클릭모달 스크린샷으로 재확정한 구성이다. 위 초기3탭에서 주간해석을분산하고일일summary만목록화한구현은대체한다.
+
+- 1탭 감정흐름: 기존처럼 곡선/은은한채움/날짜점. 점클릭·Enter·Space로 일일감정분석 모달. 날짜/감정별점수/키워드와설명/하루요약 모두 유지, 기존헤더·날짜바·칩·세로구획을 크림/갈색으로 조정. 기존점수합산유지/빈날짜가짜점없음/곡선은실제점사이만연결. 레이더없음.
+- 2탭 주간종합평가: 주요경향/지배적감정/추천사항/주간종합평가 전체를모음. 일일상세는이탭목록에섞지않음.
+- 3탭 키워드인사이트: 이번주주요키워드/반복된이야기/주요인사이트. 탭은서재달력·목록의둥근선택형과동일색상·테두리·선택배경. 기존응원공간색감에맞춤.
+- 자산7b. 이전열린8018/weekly의7a DOM확인→새로고침→7b탭/점버튼/모달확인. API필드변경없음. 8000/8018 HTML,CSS,weekly.js/model/chart 5경로 실제HTTP동일. 서비스재시작/DB이행불필요.
+- 검증: 프론트CJS전체PASS/주간unittest13 PASS. 잘못된상세자료짝·곡선생성추가검사. 최초pytest미설치/UTF8누락실패후설치변경없이기존unittest+UTF8로통과. 브라우저연결browser.user unavailable은REPL초기화로동일탭복구.
+- 실제브라우저8018 합성: 첫날점클릭과둘째날Enter각해당날짜의전체자료표시/Escape·닫기와초점복귀/2·3탭내용/키보드전환/503오류재시도복구PASS. 합성API계정1 200·3날짜필드짝,계정2 404,미인증401 PASS. 기존승인AI합성자료재사용/추가AI0/실제사용자원문·DB무변경.
+- 사용자시각·내용최종확정/실제8000로그인계정결과화면은별도. 본확인은8000제공자산일치+격리통합검증이며실제자료생성완료를뜻하지않음. 8번전체통합자동착수없음.
+- 변경파일: templates/weekly.html,static/css/weekly.css,static/js/space/weekly.js·weekly_model.js·weekly_chart.js,tests/weekly_frontend.cjs,본명세. 상위outputs에그래프/모달이미지및현재현황·같은채팅기록저장.

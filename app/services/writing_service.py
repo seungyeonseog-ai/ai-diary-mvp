@@ -239,9 +239,15 @@ def complete_operation(bind, user_id, operation_id, token, result):
                 DiaryReport.timestamp<start+timedelta(days=1)).first()
             if duplicate:
                 raise WritingError(409,'이미 이 날짜의 일기가 있어요. 서재에서 확인해 주세요.')
+            # 폐기 원본을 보존하므로 같은 시각의 재작성도 고유 시각을 사용한다.
+            timestamp = writing.created_at
+            while db.query(DiaryReport.diary_id).filter_by(user_id=user_id, timestamp=timestamp).first():
+                timestamp += timedelta(microseconds=1)
+                if timestamp >= start + timedelta(days=1):
+                    timestamp = start
             diary = DiaryReport(user_id=user_id, title=result["title"], content=result["body"],
                                 source_type="ai", state="draft", version=1,
-                                timestamp=writing.created_at, updated_at=now)
+                                timestamp=timestamp, updated_at=now)
             db.add(diary)
             db.flush()
             writing.diary_id = diary.diary_id
@@ -327,6 +333,8 @@ def discard_diary(bind, user_id, diary_id):
             return result
         writing = db.query(Writing).filter_by(user_id=user_id, diary_id=diary_id).first()
         if writing:
+            for op in db.query(WritingOperation).filter_by(writing_id=writing.id, state="pending"):
+                op.state, op.lease_token, op.lease_until = "cancelled", None, None
             writing.state, writing.closed_at = "discarded", get_kst_now()
         diary.state, diary.updated_at = "discarded", get_kst_now()
         diary.version += 1

@@ -86,8 +86,7 @@ function resizeInput(){const input=$('message-input');input.style.height='auto';
 async function fetchState(){if(detailId){const result=await json(`/writing/diaries/${detailId}`);if(same())state.diary=result;return;}const result=await json(`/writing/${state.id}`);if(!same())return;state=result;}
 async function boot(){
  clearTimeout(poll);clearError();setBusy(true);show('loading');
- try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);}
-
+ try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);if(sessionStorage.getItem(`space:${uid}:discard-notice`)){sessionStorage.removeItem(`space:${uid}:discard-notice`);await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}}
  catch(failure){if(failure.status!==401){if(detailId){show('loading');$('loading-view').querySelector('.soft-spinner').hidden=true;$('loading-view').querySelector('p').textContent='일기를 열지 못했어요.';error(failure.message,failure.status===404?()=>location.assign(backURL):boot,failure.status===404?'서재로 돌아가기':'일기 다시 열기');}else{show('chat');error(failure.message,boot,'공간 다시 열기');}}}
  finally{if(!poll)setBusy(false);}
 }
@@ -194,7 +193,7 @@ async function resolveEditConflict(){
 }
 async function saveDiary(){if(busy||editing)return;clearError();setBusy(true);try{await json(`/writing/diaries/${state.diary.id}/save`,{method:'POST',data:{version:state.diary.version}});if(!same())return;openCompletedDiary();}catch(failure){if(failure.status!==401)error(failure.message,saveDiary,'저장 다시 시도');}finally{setBusy(false);}}
 async function discardDiary(){if(busy)return;let latest;try{latest=await json(`/writing/diaries/${state.diary.id}`);}catch(failure){error(failure.message,discardDiary);return;}const today=latest.date===latest.server_date;const answer=await confirm('이 일기를 폐기할까요?',today?'폐기한 일기는 서재에서 사라져요. 오늘은 새 이야기로 다시 작성할 수 있어요.':'폐기한 일기는 서재에서 사라져요. 과거 날짜의 일기는 다시 작성할 수 없어요.','폐기하기','계속 간직하기');if(answer!=='ok')return;clearError();setBusy(true);
- try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;clearLocal();failedPhotos=[];$('photo-errors').replaceChildren();revokePhotos();if(detailId||!result.can_rewrite_today){editing=false;setBusy(false);location.assign(result.can_rewrite_today?'/space':backURL);return;}state=null;$('message-input').value='';await boot();toast('새로운 이야기를 들려주세요.');}
+ try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;clearLocal();failedPhotos=[];$('photo-errors').replaceChildren();revokePhotos();if(detailId||!result.can_rewrite_today){editing=false;setBusy(false);if(result.can_rewrite_today)sessionStorage.setItem(`space:${uid}:discard-notice`,'1');location.assign(result.can_rewrite_today?'/space':backURL);return;}state=null;$('message-input').value='';await boot();await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}
  catch(failure){if(failure.status!==401)error(failure.message,discardDiary,'폐기 다시 시도');}finally{setBusy(false);}}
 
 function renderPhotoErrors(){
@@ -263,6 +262,7 @@ window.addEventListener('daily:clock',async()=>{
  if(detailId||!same()||!state||busy||editing||$('workspace').dataset.view!=='chat')return;
  const count=state.messages.length,writingId=state.id;
  try{const next=await json(`/writing/${writingId}`);if(!same()||busy||editing||state.id!==writingId)return;state=next;
+  if(state.state==='discarded'){await boot();return;}
   if(state.date!==state.server_now.slice(0,10)){cancelDiaryPrompt();setBusy(true);try{await ensureToday();}finally{setBusy(false);}return;}
   if(count!==state.messages.length)await restore();else updateActions();
  }catch{/* 기존 입력은 유지하고 다음 연결에서 다시 조회한다. */}

@@ -120,13 +120,25 @@ def add_message(bind, user_id, writing_id, client_id, message):
         return msg
 
 
-def quota(db, user_id, writing, now):
-    base_used = db.query(WritingOperation).filter_by(writing_id=writing.id, kind="lamp", quota_kind="base").count()
-    extra_used = db.query(WritingOperation).filter_by(user_id=user_id, kind="lamp", quota_kind="extra",
-                                                    source_date=now.date().isoformat()).count()
+def quota(db, user_id, writing, now, excluding=None):
+    day = now.date().isoformat()
+    query = db.query(WritingOperation).filter_by(user_id=user_id, kind="lamp").filter(
+        WritingOperation.state.in_(("pending", "succeeded")),
+        (WritingOperation.writing_id == writing.id) | (WritingOperation.source_date == day))
+    if excluding is not None:
+        query = query.filter(WritingOperation.id != excluding)
+    operations = query.all()
+    reserved = [op for op in operations if op.state == "pending"]
+    success = [op for op in operations if op.state == "succeeded"]
+    base_used = any(op.writing_id == writing.id and op.quota_kind == "base" for op in success)
+    base_reserved = any(op.writing_id == writing.id and op.quota_kind == "base" for op in reserved)
+    extra_used = sum(op.source_date == day and op.quota_kind == "extra" for op in success)
+    extra_reserved = sum(op.source_date == day and op.quota_kind == "extra" for op in reserved)
     rights = access(db, user_id, now)
-    return {**rights, "base_remaining": 0 if base_used else 1, "extra_used": extra_used,
-            "extra_remaining": max(0, 2-extra_used) if "dialogue" in rights["features"] else 0}
+    return {**rights, "base_remaining": 0 if base_used or base_reserved else 1,
+            "base_used": int(base_used), "base_reserved": int(base_reserved),
+            "extra_used": extra_used, "extra_reserved": extra_reserved,
+            "extra_remaining": max(0, 2-extra_used-extra_reserved) if "dialogue" in rights["features"] else 0}
 
 
 def claim_operation(bind, user_id, writing_id, client_id, kind):
@@ -178,6 +190,13 @@ def claim_operation(bind, user_id, writing_id, client_id, kind):
                                   client_id=client_id, kind=kind, source_ids=[m.id for m in rows],
                                   source_date=now.date().isoformat(), quota_kind=charge, state="pending", created_at=now)
             db.add(op)
+        if kind == "lamp":
+            # 실패는 미차감. 재시도마다 현재 권한/사용량을 다시 판정한다.
+            allowance = quota(db, user_id, writing, now, excluding=op.id)
+            charge = "base" if allowance["base_remaining"] else "extra" if allowance["extra_remaining"] else None
+            if charge is None:
+                raise WritingError(409, "오늘 사용할 수 있는 대화 기회가 없어요. 이용권과 남은 횟수를 확인해 주세요.")
+            op.quota_kind = charge
         # 재시도 원본도 서버에 고정된 ID만 읽는다.
         sources = db.query(ChatMessage).filter(ChatMessage.id.in_(op.source_ids),
                     ChatMessage.user_id == user_id, ChatMessage.role == "user").order_by(ChatMessage.id).all()
@@ -207,6 +226,12 @@ def complete_operation(bind, user_id, operation_id, token, result):
         # 날짜가 넘어가는 동안 완료한 요청은 원래 작성일을 보존한다.
         if writing.state != "active":
             raise WritingError(409, "종료된 작성입니다.")
+        if op.kind == "lamp":
+            if op.source_date != now.date().isoformat():
+                raise WritingError(409, "날짜가 바뀌었어요. 오늘의 대화에서 다시 시작해 주세요.")
+            allowance = quota(db, user_id, writing, now, excluding=op.id)
+            if op.quota_kind == "extra" and allowance["extra_remaining"] == 0:
+                raise WritingError(409, "추가 대화 권한이 종료되었어요. 생성 결과는 보관되며 횟수는 차감하지 않았어요.")
         if op.kind == "diary":
             start = datetime.fromisoformat(writing.source_date)
             duplicate = db.query(DiaryReport).filter(DiaryReport.user_id==user_id,

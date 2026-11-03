@@ -17,9 +17,34 @@ if($('diary-back'))$('diary-back').href=backURL;
 const identity=token(),uid=owner();
 const same=()=>token()===identity&&owner()===uid;
 const key=name=>`space:${uid}:${state?.id||'today'}:${name}`;
-const store=(name,value)=>{try{if(value===null)sessionStorage.removeItem(key(name));else sessionStorage.setItem(key(name),JSON.stringify(value));}catch{/* 저장 공간이 없어도 서버 저장 흐름은 유지 */}};
+const composerResumeKey=`space:${uid}:composer-resume`;
+const store=(name,value)=>{try{if(value===null)sessionStorage.removeItem(key(name));else sessionStorage.setItem(key(name),JSON.stringify(value));
+ if(name==='composer'&&!detailId){if(value===null)sessionStorage.removeItem(composerResumeKey);else sessionStorage.setItem(composerResumeKey,JSON.stringify({id:state.id,date:state.date,text:value}));}
+ }catch{/* 저장 공간이 없어도 서버 저장 흐름은 유지 */}};
 const stored=name=>{try{return JSON.parse(sessionStorage.getItem(key(name)));}catch{return null;}};
-function clearLocal(){for(let i=sessionStorage.length-1;i>=0;i--){const k=sessionStorage.key(i);if(k.startsWith(`space:${uid}:${state.id}:`))sessionStorage.removeItem(k);}}
+function clearLocal(){for(let i=sessionStorage.length-1;i>=0;i--){const k=sessionStorage.key(i);if(k.startsWith(`space:${uid}:${state.id}:`))sessionStorage.removeItem(k);}try{sessionStorage.removeItem(composerResumeKey);}catch{}}
+async function restoreDayComposer(){
+ if(detailId)return;
+ const current=stored('composer');if(typeof current==='string'){store('composer',current);return;}
+ const writingId=state.id;let previous=null;
+ try{previous=JSON.parse(sessionStorage.getItem(composerResumeKey));}catch{}
+ if(previous&&typeof previous.text==='string'&&previous.date<state.date){store('composer',previous.text);
+  if(stored('composer')===previous.text&&typeof previous.id==='string'&&/^[A-Za-z0-9-]{1,80}$/.test(previous.id)&&previous.id!==state.id)try{sessionStorage.removeItem(`space:${uid}:${previous.id}:composer`);}catch{}
+  return;}
+ // 구형 열린 화면은 날짜별 작성 키만 사용했다. 본인 작성의 날짜를 서버에서 확인한다.
+ if(previous)return;
+ const prefix=`space:${uid}:`,suffix=':composer';let best=null,keys=[];
+ try{for(let i=0;i<sessionStorage.length;i++)keys.push(sessionStorage.key(i));}catch{return;}
+ for(const candidate of keys){
+  if(!candidate.startsWith(prefix)||!candidate.endsWith(suffix))continue;
+  const sourceId=candidate.slice(prefix.length,-suffix.length);if(sourceId===writingId||!/^[A-Za-z0-9-]{1,80}$/.test(sourceId))continue;
+  let text;try{text=JSON.parse(sessionStorage.getItem(candidate));}catch{continue;}if(typeof text!=='string'||!text)continue;
+  try{const old=await json(`/writing/${encodeURIComponent(sourceId)}`);if(!same()||state.id!==writingId)return;
+   if(old.state==='active'&&old.date<state.date&&(!best||old.date>best.date))best={date:old.date,text,key:candidate};
+  }catch{/* 조회 불가·타계정·폐기된 작성은 복원하지 않는다. */}
+ }
+ if(best&&same()&&state.id===writingId){store('composer',best.text);if(stored('composer')===best.text)try{sessionStorage.removeItem(best.key);}catch{}}
+}
 function show(view){for(const name of ['loading','chat','generating','diary'])$(name+'-view').hidden=name!==view;$('workspace').dataset.view=view;}
 function error(message,action,label='다시 시도'){if(!same())return;$('error-message').textContent=message;$('error-panel').hidden=false;retry=action;$('retry-action').hidden=!action;$('retry-action').textContent=label;}
 function clearError(){$('error-panel').hidden=true;retry=null;}
@@ -32,7 +57,7 @@ function updateActions(){
  const unresolved=ops().some(o=>['failed','pending'].includes(o.state));
  for(const name of ['message-input','send-message','lamp-submit','make-diary','edit-diary','add-photo','discard-diary','cancel-edit'])$(name).disabled=busy;
  if(state&&!detailId){$('send-message').disabled=busy||remaining===0||unresolved;$('message-input').disabled=busy||remaining===0||unresolved;
- $('lamp-submit').disabled=busy||unresolved||(!state.messages.length&&!$('message-input').value.trim());
+ $('lamp-submit').disabled=busy||remaining===0||unresolved||(!state.messages.length&&!$('message-input').value.trim());
  $('make-diary').hidden=!state.diary&&(!success()||unsubmitted().length>0||unresolved);
  $('make-diary').textContent=state.diary?'오늘 일기 보기':'이 이야기로 일기 만들기';
  if(state.diary){$('send-message').disabled=true;$('message-input').disabled=true;$('lamp-submit').disabled=true;}
@@ -59,7 +84,7 @@ function resizeInput(){const input=$('message-input');input.style.height='auto';
 async function fetchState(){if(detailId){const result=await json(`/writing/diaries/${detailId}`);if(same())state.diary=result;return;}const result=await json(`/writing/${state.id}`);if(!same())return;state=result;}
 async function boot(){
  clearTimeout(poll);clearError();setBusy(true);show('loading');
- try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restore(true);}
+ try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);}
  catch(failure){if(failure.status!==401){if(detailId){show('loading');$('loading-view').querySelector('.soft-spinner').hidden=true;$('loading-view').querySelector('p').textContent='일기를 열지 못했어요.';error(failure.message,failure.status===404?()=>location.assign(backURL):boot,failure.status===404?'서재로 돌아가기':'일기 다시 열기');}else{show('chat');error(failure.message,boot,'공간 다시 열기');}}}
  finally{if(!poll)setBusy(false);}
 }
@@ -82,8 +107,8 @@ async function refresh(){clearError();setBusy(true);try{await fetchState();await
 async function ensureToday(){
  await fetchState();
  if(state.date===state.server_now.slice(0,10))return true;
- const input=$('message-input').value;clearLocal();
- const today=await json('/writing',{method:'POST'});state=await json(`/writing/${today.id}`);
+ const input=$('message-input').value;
+ const today=await json('/writing',{method:'POST'}),next=await json(`/writing/${today.id}`);if(!same())return false;clearLocal();state=next;
  if(input)store('composer',input);renderChat();toast('새로운 하루가 시작됐어요. 오늘의 이야기를 남겨주세요.');return false;
 }
 
@@ -231,5 +256,13 @@ function connectNotifications(){
  socket.onclose=event=>{if(![1000,1008].includes(event.code)&&same())setTimeout(connectNotifications,5000);};
 }
 window.addEventListener('pagehide',()=>{cancelDiaryPrompt();clearTimeout(poll);socket?.close(1000);activeController?.abort();revokePhotos();});
+window.addEventListener('daily:clock',async()=>{
+ if(detailId||!same()||!state||busy||editing||$('workspace').dataset.view!=='chat')return;
+ const writingId=state.id;
+ try{const next=await json(`/writing/${writingId}`);if(!same()||busy||editing||state.id!==writingId)return;
+  if(next.date!==next.server_now.slice(0,10)){state=next;cancelDiaryPrompt();setBusy(true);try{await ensureToday();}finally{setBusy(false);}return;}
+  state.quota=next.quota;state.server_now=next.server_now;updateActions();
+ }catch{/* 기존 입력을 유지하고 다음 연결에서 다시 확인한다. */}
+});
 document.addEventListener('visibilitychange',()=>{cancelDiaryPrompt();if(document.visibilityState==='visible'&&state&&!busy&&!editing)void refresh();});
 if(!token())void expire();else{void boot();connectNotifications();}

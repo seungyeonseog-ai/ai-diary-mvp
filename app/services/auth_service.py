@@ -46,6 +46,9 @@ def create_user(db: Session, user: UserCreate):
         nickname=user.nickname
     )
     db.add(db_user)
+    db.flush()
+    from app.services.access_service import ensure_account
+    ensure_account(db, db_user)
     db.commit()
     db.refresh(db_user)
-    return db_user 
+    return db_user

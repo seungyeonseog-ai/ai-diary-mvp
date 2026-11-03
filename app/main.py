@@ -11,6 +11,7 @@ from app.api.routers.constellation import router as constellation_router
 from app.api.routers.writing_router import router as writing_router
 from app.api.routers.library_router import router as library_router
 from app.core.writing_migration import require_writing_schema
+from app.core.access_migration import require_access_schema
 import asyncio
 from contextlib import suppress
 from app.tasks.session_task_runner import session_checker_all_users_loop
@@ -54,6 +55,7 @@ logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 
 
 
+require_access_schema(engine)
 Base.metadata.create_all(bind=engine) # 클래스 정의생성해서 테이블 만들기
 require_writing_schema(engine)
 require_daily_schema(engine)

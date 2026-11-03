@@ -1,5 +1,5 @@
-"""체험 기간과 이용권을 분리한다. 결제 정보나 사용자 원문을 보관하지 않는다."""
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+"""체험 기간과 무료 전환 기반. 결제 정보나 사용자 원문을 보관하지 않는다."""
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from app.core.connection import Base
 
 
@@ -8,20 +8,5 @@ class AccountAccess(Base):
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     trial_started_at = Column(DateTime)
     trial_expires_at = Column(DateTime)
+    # 첫 이행의 NOT NULL 컬럼과 호환하기 위한 고정값. 권한 판정에는 사용하지 않는다.
     plan = Column(String(30), nullable=False, default="free")
-    pass_started_at = Column(DateTime)
-    pass_expires_at = Column(DateTime)
-    cancelled_at = Column(DateTime)
-
-
-class AccessChange(Base):
-    __tablename__ = "access_changes"
-    id = Column(String(36), primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    request_id = Column(String(80), nullable=False)
-    action = Column(String(20), nullable=False)
-    old_plan = Column(String(30), nullable=False)
-    new_plan = Column(String(30), nullable=False)
-    effective_at = Column(DateTime, nullable=False)
-    expires_at = Column(DateTime)
-    __table_args__ = (UniqueConstraint("user_id", "request_id"),)

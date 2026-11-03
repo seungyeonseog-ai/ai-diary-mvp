@@ -43,7 +43,8 @@ def create_user(db: Session, user: UserCreate):
         username=user.username,
         email=user.email,
         hashed_password=hashed_pw,
-        nickname=user.nickname
+        nickname=user.nickname,
+        registered_at=get_kst_now()
     )
     db.add(db_user)
     db.flush()

@@ -13,6 +13,7 @@ from app.models.db.chat_message_model import ChatMessage
 from app.models.db.study_model import DiaryReport
 from app.models.db.writing_model import Writing, WritingMessage, WritingOperation, SummaryRange, DiaryPhoto
 from app.utils.time_utils import get_kst_now
+from app.services.access_service import access
 
 
 class WritingError(Exception):
@@ -123,14 +124,9 @@ def quota(db, user_id, writing, now):
     base_used = db.query(WritingOperation).filter_by(writing_id=writing.id, kind="lamp", quota_kind="base").count()
     extra_used = db.query(WritingOperation).filter_by(user_id=user_id, kind="lamp", quota_kind="extra",
                                                     source_date=now.date().isoformat()).count()
-    user = db.get(User, user_id)
-    trial_start = user.trial_started_at or user.registered_at
-    expires = trial_start + timedelta(days=7) if trial_start else None
-    active = expires is not None and trial_start <= now < expires
-    return {"base_remaining": 0 if base_used else 1, "extra_used": extra_used,
-            "extra_remaining": max(0, 2-extra_used) if active else 0,
-            "trial_state": "active" if active else "expired" if expires else "registration_unknown",
-            "trial_expires_at": expires.isoformat() if expires else None}
+    rights = access(db, user_id, now)
+    return {**rights, "base_remaining": 0 if base_used else 1, "extra_used": extra_used,
+            "extra_remaining": max(0, 2-extra_used) if "dialogue" in rights["features"] else 0}
 
 
 def claim_operation(bind, user_id, writing_id, client_id, kind):

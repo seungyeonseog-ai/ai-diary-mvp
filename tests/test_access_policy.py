@@ -14,8 +14,8 @@ from sqlalchemy.orm import Session
 from app.core.connection import Base
 from app.core.access_migration import migrate_access_schema, require_access_schema
 from app.models.db.user_model import User
-from app.models.db.access_model import AccountAccess, AccessChange
-from app.services.access_service import access, ensure_account, permits, update_pass
+from app.models.db.access_model import AccountAccess
+from app.services.access_service import access, ensure_account, permits
 from tools.migrate_access import migrate, digest_existing
 
 
@@ -25,7 +25,7 @@ class AccessTests(unittest.TestCase):
         self.path = Path(self.temp.name)/"test.db"
         self.engine = create_engine("sqlite:///"+self.path.as_posix())
         # 권한 기반만 필요하므로 관련 테이블만 만든다.
-        for table in (User.__table__, AccountAccess.__table__, AccessChange.__table__):
+        for table in (User.__table__, AccountAccess.__table__):
             table.create(self.engine)
         self.start = datetime(2026,11,3,23,59,59)
         with Session(self.engine) as db:
@@ -57,37 +57,68 @@ class AccessTests(unittest.TestCase):
             self.assertEqual(access(db,2,self.start)["trial_state"],"registration_unknown")
             self.assertEqual(access(db,2,self.start)["features"],[])
 
-    def test_pass_combinations_change_cancel_expire_and_account_isolation(self):
-        now = datetime(2026,11,11)
-        end = now+timedelta(days=30)
+    def test_legacy_paid_fields_cannot_extend_trial_or_grant_features(self):
         with Session(self.engine) as db:
-            update_pass(db,1,"first","dialogue_encouragement",now,end)
-            self.assertEqual(set(access(db,1,now)["features"]),{"dialogue","encouragement"})
-            self.assertEqual(access(db,2,now)["features"],[])
-            update_pass(db,1,"second","encouragement_weekly",now+timedelta(days=1),end+timedelta(days=10))
-            self.assertEqual(set(access(db,1,now+timedelta(days=1))["features"]),{"encouragement","weekly"})
-            self.assertEqual(db.get(AccountAccess,1).pass_expires_at,end)
-            update_pass(db,1,"third","encouragement_weekly",now+timedelta(days=2),cancel=True)
-            db.flush()
-            self.assertTrue(permits(db,1,"weekly",end-timedelta(seconds=1)))
-            self.assertEqual(access(db,1,end)["features"],[])
-            self.assertEqual(db.query(AccessChange).count(),3)
+            row=ensure_account(db,db.get(User,1))
+            row.plan="super"
+            self.assertEqual(access(db,1,datetime(2026,11,10))["features"],[])
+            self.assertEqual(access(db,1,datetime(2026,11,10))["plan"],"free")
 
-    def test_idempotent_changes_invalid_grant_and_conflicting_key(self):
-        now = datetime(2026,11,11)
+    def test_existing_period_and_account_isolation_survive_repeat_migration(self):
         with Session(self.engine) as db:
-            for plan,end in (("free",None),("super",None),("bogus",now+timedelta(days=1))):
-                with self.assertRaises(ValueError): update_pass(db,1,plan,plan,now,end)
-            for _ in range(2):
-                update_pass(db,1,"request","super",now,now+timedelta(days=30))
-                db.flush()
-            self.assertEqual(db.query(AccessChange).count(),1)
-            with self.assertRaises(ValueError):
-                update_pass(db,1,"request","dialogue_weekly",now)
+            ensure_account(db,db.get(User,1))
+            db.get(User,2).registered_at=datetime(2026,10,1)
+            db.commit()
+        migrate_access_schema(self.engine)
+        with Session(self.engine) as db:
+            self.assertTrue(permits(db,1,"dialogue",self.start))
+            self.assertFalse(permits(db,2,"dialogue",self.start))
+            snapshot=db.get(AccountAccess,1).trial_expires_at
+        migrate_access_schema(self.engine)
+        with Session(self.engine) as db:self.assertEqual(db.get(AccountAccess,1).trial_expires_at,snapshot)
+
+    def test_signup_transaction_uses_explicit_clock_and_stores_period(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from app.services import auth_service
+        with Session(self.engine) as db, patch.object(auth_service,"get_kst_now",return_value=self.start), patch.object(auth_service,"get_password_hash",return_value="unused"):
+            user=auth_service.create_user(db,SimpleNamespace(username="new",email="new@example.org",password="synthetic",nickname="합성"))
+            row=db.get(AccountAccess,user.id)
+            self.assertEqual(user.registered_at,self.start)
+            self.assertEqual(row.trial_started_at,self.start)
+            self.assertEqual(row.trial_expires_at,datetime(2026,11,10))
+
+    def test_writing_api_uses_midnight_expiry_and_preserves_free_base(self):
+        from unittest.mock import patch
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from app.api.routers import writing_router as api
+        from app.api.dependencies.auth_dependencies import get_current_user
+        from app.core.connection import get_db,Base
+        from app.services import writing_service
+        # 실제 작성 라우터의 조회 응답까지 검사하며 AI 요청은 하지 않는다.
+        Base.metadata.create_all(self.engine)
+        app=FastAPI();app.include_router(api.router)
+        owner=[1];now=[datetime(2026,11,9,23,59,59)]
+        def database():
+            with Session(self.engine) as db:yield db
+        app.dependency_overrides[get_db]=database
+        app.dependency_overrides[get_current_user]=lambda:User(id=owner[0])
+        with TestClient(app) as client, patch.object(writing_service,"get_kst_now",side_effect=lambda:now[0]), patch.object(api,"get_kst_now",side_effect=lambda:now[0]):
+            key=client.post("/writing").json()["id"]
+            quota=client.get("/writing/"+key).json()["quota"]
+            self.assertEqual(quota["extra_remaining"],2)
+            self.assertEqual(quota["trial_expires_at"],"2026-11-10T00:00:00")
+            now[0]=datetime(2026,11,10)
+            key=client.post("/writing").json()["id"]
+            quota=client.get("/writing/"+key).json()["quota"]
+            self.assertEqual((quota["base_remaining"],quota["extra_remaining"]),(1,0))
+            self.assertEqual(quota["features"],[])
+            owner[0]=2
+            self.assertEqual(client.get("/writing/"+key).status_code,404)
 
     def test_backup_migration_all_original_values_unchanged_and_repeat_safe(self):
         # 기존 서버에는 이용권 테이블이 없으며 사용자 원본은 변경하지 않아야 한다.
-        AccessChange.__table__.drop(self.engine)
         AccountAccess.__table__.drop(self.engine)
         with closing(sqlite3.connect(self.path)) as db:
             before = digest_existing(db)

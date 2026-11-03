@@ -1,9 +1,9 @@
 {% extends "ui_base.html" %}{% block title %}서재 · 나의 공간{% endblock %}
 {% block body_class %}space-page library-page{% endblock %}
-{% block head %}<link rel="stylesheet" href="/static/css/library.css?v=20261103-7a">{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/library.css?v=20261103-7c">{% endblock %}
 {% block content %}{% include "space_sidebar.html" %}
-<main id="library-workspace" class="workspace library-workspace" aria-busy="true">
-<header class="library-hero"><h1>서재</h1><p>당신의 소중한 이야기들이<br>차곡차곡 모여 있는 공간이에요.</p></header>
+<main id="library-workspace" class="workspace library-workspace{% if request.query_params.get("view") in ["calendar","list"] %} more-workspace{% endif %}" aria-busy="true">
+<header id="library-hero" class="library-hero"{% if request.query_params.get("view") in ["calendar","list"] %} hidden{% endif %}><h1>서재</h1><p>당신의 소중한 이야기들이<br>차곡차곡 모여 있는 공간이에요.</p></header>
 <div id="library-loading" class="library-loading" role="status">기록을 꺼내고 있어요…</div>
 <section id="shelf-view" hidden aria-label="서재 책장"><div class="library-section-heading"><h2>{{icon('book')}} 지난 일기</h2><a id="diary-more" href="/library?view=calendar">더보기 {{icon('arrow')}}</a></div>
 <div class="shelf-row"><button id="books-older" class="shelf-arrow" aria-label="과거 일기 5권 보기">‹</button><div id="books" class="books"></div><button id="books-newer" class="shelf-arrow" aria-label="최근 일기 5권 보기">›</button></div><p id="shelf-page" class="shelf-page"></p>
@@ -11,9 +11,9 @@
 <div class="library-cards"><section class="library-card weekly-card"><div class="card-heading"><h2>주간 차트</h2><a href="/weekly">더보기 {{icon('arrow')}}</a></div><div id="weekly-preview" class="weekly-preview"><p>마음의 흐름을 살펴보고 있어요.</p></div></section>
 <section class="library-card letter-card"><div class="card-heading"><h2>응원 메시지</h2><a href="/letters">더보기 {{icon('arrow')}}</a></div><div class="letter-arrival"><div class="letter-art"><img src="/static/images/space/envelope-v2.png" alt="봉투"><span id="letter-lock" class="letter-lock" hidden>{{icon('lock')}}</span></div><div><p id="letter-status">오늘의 편지를 확인하고 있어요.</p><span id="letter-note">당신을 위한 마음이 머무는 곳이에요.</span></div></div></section></div>
 </section>
-<section id="diaries-view" class="diaries-view" hidden aria-label="지난 일기"><a class="library-back" href="/library">‹ <span>지난 일기</span></a>
+<section id="diaries-view" class="diaries-view" hidden aria-label="지난 일기"><a class="more-back" href="/library">‹ 서재로 돌아가기</a>
 <div class="view-tabs" role="group" aria-label="일기 보기 방식"><button id="calendar-tab" aria-pressed="true">달력으로 보기</button><button id="list-tab" aria-pressed="false">목록으로 보기</button></div>
-<div class="month-nav"><button id="month-prev" aria-label="이전 달">‹</button><button id="month-picker-open" aria-label="연월 선택" aria-haspopup="dialog" aria-expanded="false"></button><button id="month-next" aria-label="다음 달">›</button><dialog id="month-picker" class="month-picker" aria-label="기록을 살펴볼 달"><button id="month-picker-close" class="picker-close" aria-label="연월 선택 닫기">×</button><div class="year-picker"><button id="year-prev" aria-label="이전 연도">‹</button><span id="picker-year" class="picker-year-label" aria-live="polite"></span><button id="year-next" aria-label="다음 연도">›</button></div><div id="picker-months" class="picker-months" role="group" aria-label="월 선택"></div></dialog></div>
+<div class="month-nav"><button id="month-prev" aria-label="이전 달">‹</button><button id="month-picker-open" aria-label="연월 선택" aria-haspopup="dialog" aria-expanded="false"></button><button id="month-next" aria-label="다음 달">›</button><dialog id="month-picker" class="month-picker" aria-label="기록을 살펴볼 달"><button id="month-picker-close" class="picker-close dialog-close" aria-label="연월 선택 닫기">×</button><div class="year-picker"><button id="year-prev" aria-label="이전 연도">‹</button><span id="picker-year" class="picker-year-label" aria-live="polite"></span><button id="year-next" aria-label="다음 연도">›</button></div><div id="picker-months" class="picker-months" role="group" aria-label="월 선택"></div></dialog></div>
 <section id="calendar-view" aria-label="일기 달력"><div class="weekdays" aria-hidden="true"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div id="calendar-days" class="calendar-days" role="group" aria-label="날짜 선택"></div></section>
 <section id="list-view" hidden aria-label="일기 목록"><div id="diary-list" class="diary-list"></div><nav class="list-paging" aria-label="목록 페이지"><button id="list-prev" aria-label="이전 목록 페이지">‹</button><span id="list-page"></span><button id="list-next" aria-label="다음 목록 페이지">›</button></nav></section>
 <div id="empty-month" class="empty-month" hidden><p>이 달에는 저장한 일기가 없어요.</p><span>다른 달의 기록을 살펴보세요.</span></div>
@@ -22,4 +22,4 @@
 </main>
 
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261103-7a"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261103-7c"></script>{% endblock %}

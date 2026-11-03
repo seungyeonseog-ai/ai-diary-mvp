@@ -1,7 +1,10 @@
 {% extends "ui_base.html" %}{% block title %}응원 편지 · 나의 공간{% endblock %}
 {% block body_class %}space-page{% endblock %}
 {% block content %}{% include "space_sidebar.html" %}
-<main class="workspace letter-workspace"><h1>당신에게 온 편지</h1><p>오늘의 마음을 편안한 시간에 펼쳐보세요.</p>
-<div class="daily-actions"><button id="daily-inbox" class="primary" disabled>오늘 받은편지</button><button id="daily-archive" class="secondary">보관함</button></div><p id="daily-inbox-status" role="status">편지 상태를 확인하고 있어요.</p>
-<p>오늘 받은편지는 자정 이후 비활성화돼요. 놓친 편지는 왼쪽 알림에서 확인해 주세요.</p><a href="/library">서재로 돌아가기</a></main>
-{% endblock %}
+<main class="workspace letter-workspace more-workspace" id="letters-workspace">
+<a class="more-back" href="/library">‹ 서재로 돌아가기</a>
+<div class="view-tabs" role="tablist" aria-label="응원 편지"><button role="tab" aria-selected="true" aria-controls="letter-page-panel" id="daily-inbox">오늘 받은편지</button><button role="tab" aria-selected="false" tabindex="-1" aria-controls="letter-page-panel" id="daily-archive">보관함</button></div>
+<section id="letter-page-panel" role="tabpanel" aria-labelledby="daily-inbox"><p id="daily-inbox-status" role="status">편지를 불러오고 있어요.</p><div id="letter-page-error" role="alert" hidden></div><div id="letter-content"></div></section>
+</main>{% endblock %}
+
+{% block scripts %}<script type="module" src="/static/js/space/letters.js?v=20261103-7c"></script>{% endblock %}

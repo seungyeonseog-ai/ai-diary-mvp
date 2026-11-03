@@ -1,5 +1,5 @@
-import {$,node,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261103-7a';
-import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-7a';
+import {$,node,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261103-7c';
+import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-7c';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 const cover=coverURL;
 let pickerYear=0,state=null,today=null,sequence=0,cardSequence=0,controller=null,retry=null,photoURLs=[],socket=null,reconnect=null;
@@ -15,6 +15,7 @@ async function load(next=null,push=false){
   let initial;
   if(!today){initial=await json('/library-data/shelf',{signal});today=initial.server_date;}
   wanted=wanted||libraryState(location.search,today);
+  $('library-hero').hidden=wanted.view!=='shelf';$('library-workspace').classList.toggle('more-workspace',wanted.view!=='shelf');
   const data=wanted.view==='shelf'?(initial&&wanted.page===1?initial:await json(`/library-data/shelf?page=${wanted.page}`,{signal})):await json(`/library-data/month?month=${wanted.month}&page=${wanted.page}`,{signal});
   if(!same()||requestSequence!==sequence)return;
   today=data.server_date;state={...wanted,page:data.page};

@@ -3,6 +3,7 @@ export const $ = id => document.getElementById(id);
 export const token = () => localStorage.getItem('access_token');
 export const owner = () => localStorage.getItem('user_id');
 export function node(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
+export function closeButton(dialog,label='닫기'){const button=node('button','dialog-close','×');button.type='button';button.setAttribute('aria-label',label);button.addEventListener('click',()=>dialog.close());return button;}
 export function id(){return crypto.randomUUID();}
 export function safeNext(value,fallback='/space'){try{const url=new URL(value,location.origin);return url.origin===location.origin&&/^\/(space|library|diary\/[1-9]\d*)$/.test(url.pathname)?url.pathname+url.search:fallback;}catch{return fallback;}}
 export function clearIdentity(){
@@ -14,7 +15,7 @@ let dialogQueue=Promise.resolve();
 export function dialog(title,description,choices=[{label:'확인',value:'ok',primary:true}]){
  const result=dialogQueue.then(()=>new Promise(resolve=>{
   const el=$('ui-dialog');$('dialog-title').textContent=title;$('dialog-description').textContent=description;$('dialog-choices').replaceChildren();
-  for(const choice of choices){const button=node('button',choice.primary?'primary':'secondary',choice.label);button.value=choice.value;button.type='submit';$('dialog-choices').append(button);}
+  for(const choice of choices){if(choice.label==='닫기')continue;const button=node('button',choice.primary?'primary':'secondary',choice.label);button.value=choice.value;button.type='submit';$('dialog-choices').append(button);}
   el.returnValue='';el.addEventListener('close',()=>resolve(el.returnValue||'cancel'),{once:true});el.showModal();
  }));dialogQueue=result.catch(()=>{});return result;
 }

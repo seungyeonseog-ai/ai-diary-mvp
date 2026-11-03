@@ -1,11 +1,11 @@
-import {node} from './ui.js?v=20261103-7a';
+import {node,closeButton} from './ui.js?v=20261103-7c';
 let detail=null;
 export function closeDetail(){if(detail){detail.close();detail.remove();detail=null;}}
 export function showDetail(day,valid=()=>true){
  if(!valid())return;closeDetail();
  const dialog=node('dialog','weekly-detail');detail=dialog;dialog.setAttribute('aria-labelledby','weekly-detail-title');
  const header=node('header','weekly-detail-header'),title=node('h2','','일일 감정 분석');title.id='weekly-detail-title';
- const close=node('button','weekly-detail-close','×');close.type='button';close.setAttribute('aria-label','일일 감정 분석 닫기');close.addEventListener('click',()=>dialog.close());header.append(title,close);
+ const close=closeButton(dialog,'일일 감정 분석 닫기');header.append(title,close);
  const body=node('div','weekly-detail-content'),date=new Date(day.date_str+'T12:00:00');
  body.append(node('div','weekly-detail-date',`${date.getFullYear()}년 ${date.getMonth()+1}월 ${date.getDate()}일 (${'일월화수목금토'[date.getDay()]})`));
  const section=label=>{const el=node('section','weekly-detail-section');el.append(node('h3','',label));body.append(el);return el;};

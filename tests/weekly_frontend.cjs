@@ -10,7 +10,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
  const duplicate=structuredClone(data);duplicate.diary_analyses[1].date_str='2026-11-03';assert.throws(()=>model(duplicate));
  const broken=structuredClone(data);broken.weekly_analysis.keyword_patterns='bad';assert.throws(()=>model(broken));
  const badDetails=structuredClone(data);badDetails.diary_analyses[0].emotions=['one'];assert.throws(()=>model(badDetails));
- const uiStub=new vm.SyntheticModule(['node'],function(){this.setExport('node',()=>{});},{context});
+ const uiStub=new vm.SyntheticModule(['node','closeButton'],function(){this.setExport('node',()=>{});this.setExport('closeButton',()=>{});},{context});
  const charts=new vm.SourceTextModule(fs.readFileSync('static/js/space/weekly_chart.js','utf8'),{context});await charts.link(()=>uiStub);await charts.evaluate();
  const curve=charts.namespace.curvePath([{x:0,y:1},{x:3,y:0},{x:6,y:1}]);assert(curve.includes('C '));assert(!curve.includes('NaN'));assert(curve.endsWith('6 1'));
  assert.equal(charts.namespace.curvePath([{x:2,y:4}]),'M 2 4');

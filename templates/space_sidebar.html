@@ -4,5 +4,5 @@
 <a class="nav-item {% if active_tab|default('home')=='library' %}active{% endif %}" href="/library" {% if active_tab|default('home')=='library' %}aria-current="page"{% endif %}>{{icon('book')}}<span>서재</span><span class="library-notice-count" hidden></span></a>
 <button class="nav-item coming-soon" data-feature="텃밭">{{icon('leaf')}}<span>텃밭</span><small>준비 중</small></button>
 <button class="nav-item coming-soon" data-feature="별자리">{{icon('star')}}<span>별자리</span><small>준비 중</small></button>
-<div class="sidebar-bottom"><button id="daily-notifications" class="nav-item" aria-label="편지 알림 목록">✉<span>편지 알림</span></button><button id="settings" class="nav-item">{{icon('settings')}}<span>설정</span></button>
+<div class="sidebar-bottom"><button id="daily-notifications" class="nav-item" aria-label="알림">{{icon('bell')}}<span>알림</span></button><button id="settings" class="nav-item">{{icon('settings')}}<span>설정</span></button>
 <button id="account" class="avatar-button" aria-label="계정 정보"><img src="/static/images/space/account-avatar-v1.png" alt=""><span class="online-dot"></span></button></div></aside>

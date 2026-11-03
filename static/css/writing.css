@@ -3,3 +3,6 @@
 #workspace[data-editing="true"] #edit-body{min-height:260px}
 .diary-view .photo-error{line-height:1.7}
 .today-diary-link{display:block;margin:12px 0;text-align:right;color:var(--cream)}
+.lamp-button[data-available="true"] img{filter:drop-shadow(0 0 22px #f8cf6a99)}
+.lamp-button[data-available="false"] img{filter:saturate(.35);opacity:.65}
+.chat-footer{flex-wrap:wrap;gap:12px}

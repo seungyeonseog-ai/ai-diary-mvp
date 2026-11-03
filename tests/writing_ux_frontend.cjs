@@ -8,11 +8,14 @@ class El{
 }
 (async()=>{
  const ids=new Map();const $=id=>{if(!ids.has(id))ids.set(id,new El());return ids.get(id)};
- const storage=new Map(),timers=new Map(),calls=[],navigation=[],dialogs=[];let seq=0,answer='cancel',identity='a';
+ const storage=new Map(),timers=new Map(),calls=[],navigation=[],dialogs=[],windowEvents=new Map();let seq=0,answer='cancel',identity='a',clockState=null;
  let diary={id:1,title:'원래 제목',body:'원래 본문',date:'2026-11-03',state:'draft',version:1,photos:[]};
  const copy=()=>JSON.parse(JSON.stringify(diary));
  async function json(path,options={}){
   calls.push([path,options]);
+  if(clockState&&path==='/writing/test')return structuredClone(clockState);
+  if(clockState&&path==='/writing'&&options.method==='POST')return {id:'today'};
+  if(clockState&&path==='/writing/today')return {...structuredClone(clockState),id:'today',date:'2026-11-04',messages:[]};
   if(path.includes('/photos?')){assert.equal(Number(new URL('http://test'+path).searchParams.get('version')),diary.version);diary.photos.push({id:String(++seq),url:'/photo'});diary.version++;return {id:String(seq),version:diary.version}}
   if(path.includes('/photos/')){assert.equal(options.data.version,diary.version);diary.photos=diary.photos.filter(p=>!path.endsWith('/'+p.id));diary.version++;return {version:diary.version}}
   if(path.endsWith('/save')){diary.state='saved';diary.version++;return copy()}
@@ -21,7 +24,7 @@ class El{
  }
  const context=vm.createContext({URL,URLSearchParams,AbortController,TextDecoder,setTimeout:f=>{const id=++seq;timers.set(id,f);return id},clearTimeout:id=>timers.delete(id),
   location:{search:'',assign:url=>navigation.push(url)},document:{visibilityState:'visible',querySelectorAll:()=>[],addEventListener(){}},
-  window:{addEventListener(){}},localStorage:{getItem:()=>''},sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
+  window:{addEventListener:(name,fn)=>windowEvents.set(name,fn)},localStorage:{getItem:()=>''},sessionStorage:{get length(){return storage.size},key:i=>[...storage.keys()][i],getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
   Intl,Date,Event:class{},console});
  context.URL.createObjectURL=()=> 'blob:test';context.URL.revokeObjectURL=()=>{};
  const exported={$ ,node:(tag,cls='',text='')=>Object.assign(new El(),{tag,className:cls,textContent:text}),id:()=>String(++seq),token:()=>identity,owner:()=>identity,json,
@@ -29,7 +32,7 @@ class El{
  const stub=new vm.SyntheticModule(Object.keys(exported),function(){for(const[k,v]of Object.entries(exported))this.setExport(k,v)},{context});
  const policy=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_policy.js','utf8'),{context});await policy.link(()=>{});await policy.evaluate();
  let source=fs.readFileSync('static/js/space/writing.js','utf8').replace("if(!token())void expire();else{void boot();connectNotifications();}",'');
- source+='\nexport {restore,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt};export function fixture(d){state={id:"test",diary:d,messages:[],operations:[],quota:{base_remaining:1,extra_remaining:2}}}';
+ source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt};export function fixture(d,q={base_remaining:1,extra_remaining:2}){state={id:"test",diary:d,messages:[],operations:[],quota:q}};export function stateDate(){return state.date}';
  const mod=new vm.SourceTextModule(source,{context});await mod.link(spec=>spec.includes('writing_policy')?policy:stub);await mod.evaluate();const m=mod.namespace;
  m.fixture(copy());await m.loadDiary();m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
  const entries=Array.from({length:4},(_,i)=>({id:'p'+i,file:{name:'합성'+i+'.png',size:10}}));
@@ -48,8 +51,13 @@ class El{
  assert.equal(await m.allowLeave(),true);
  await m.restore(true);assert.equal($('workspace').dataset.view,'chat');assert.equal($('diary-view').hidden,true);assert.equal($('make-diary').textContent,'오늘 일기 보기');
  await m.restore();assert.equal($('workspace').dataset.view,'chat');
+ m.fixture(copy(),{base_remaining:0,extra_remaining:2});$('message-input').value='추가 이야기';m.updateActions();assert.equal($('message-input').disabled,false);assert.equal($('lamp-submit').disabled,false);assert.equal($('make-diary').textContent,'오늘 일기 보기');assert($('quota-label').textContent.includes('추가 2회'));
+ m.fixture(copy(),{base_remaining:0,extra_remaining:0});m.updateActions();assert.equal($('message-input').disabled,true);assert.equal($('lamp-submit').disabled,true);assert.equal($('make-diary').hidden,false);
  assert.equal(policy.namespace.replyReadingDelay('짧음'),5000);assert.equal(policy.namespace.replyReadingDelay('가'.repeat(1000)),15000);
  m.fixture(null);m.scheduleDiaryPrompt('답변');assert.equal(timers.size,1);m.cancelDiaryPrompt();assert.equal(timers.size,0);
- m.scheduleDiaryPrompt('답변');identity='b';await [...timers.values()][0]();assert.equal(dialogs.at(-1)[0],'저장하지 않고 나갈까요?');
+ m.fixture(null);$('workspace').dataset.view='chat';$('message-input').value='날짜가 바뀌어도 보존할 입력';
+ clockState={id:'test',date:'2026-11-03',server_now:'2026-11-04T00:00:01+09:00',state:'active',messages:[],operations:[],diary:null,quota:{base_remaining:1,extra_remaining:2}};
+ await windowEvents.get('daily:clock')();assert.equal(m.stateDate(),'2026-11-04');assert.equal($('message-input').value,'날짜가 바뀌어도 보존할 입력');
+ clockState=null;m.scheduleDiaryPrompt('답변');identity='b';await [...timers.values()][0]();assert.equal(dialogs.at(-1)[0],'저장하지 않고 나갈까요?');
  console.log('PASS writing UX: photo limit persistence/reset, editing text/version preservation, cancel, saved detail navigation, reading timer cancellation and account guard');
 })().catch(e=>{console.error(e);process.exitCode=1});

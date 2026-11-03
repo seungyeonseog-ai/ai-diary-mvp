@@ -101,8 +101,8 @@ def add_message(bind, user_id, writing_id, client_id, message):
             if msg.message != message:
                 raise WritingError(409, "같은 요청 ID의 내용이 변경되었습니다.")
             return msg
-        if row.diary_id:
-            raise WritingError(409, "일기가 생성되었습니다. 수정하거나 폐기 후 새로 작성해 주세요.")
+        if row.diary_id and quota(db, user_id, row, get_kst_now())["extra_remaining"] == 0:
+            raise WritingError(409, "남은 추가 대화가 없어요. 오늘 일기를 보거나 폐기 후 다시 작성할 수 있어요.")
         if db.query(WritingOperation).filter_by(writing_id=row.id, kind="diary", state="failed").first():
             raise WritingError(409, "일기 생성 요청을 먼저 다시 시도해 주세요. 원래 이야기는 보관되어 있습니다.")
         if db.query(WritingOperation).filter_by(writing_id=row.id, state="pending").first():
@@ -135,7 +135,7 @@ def quota(db, user_id, writing, now, excluding=None):
     extra_used = sum(op.source_date == day and op.quota_kind == "extra" for op in success)
     extra_reserved = sum(op.source_date == day and op.quota_kind == "extra" for op in reserved)
     rights = access(db, user_id, now)
-    return {**rights, "base_remaining": 0 if base_used or base_reserved else 1,
+    return {**rights, "base_remaining": 0 if base_used or base_reserved or writing.diary_id else 1,
             "base_used": int(base_used), "base_reserved": int(base_reserved),
             "extra_used": extra_used, "extra_reserved": extra_reserved,
             "extra_remaining": max(0, 2-extra_used-extra_reserved) if "dialogue" in rights["features"] else 0}
@@ -153,7 +153,7 @@ def claim_operation(bind, user_id, writing_id, client_id, kind):
             if old.state == "succeeded":
                 return old, None
             writable(writing, now)
-            if writing.diary_id:
+            if writing.diary_id and kind == "diary":
                 raise WritingError(409, "이미 생성된 초안을 확인해 주세요.")
             if old.state == "pending" and old.lease_until and old.lease_until > now:
                 raise WritingError(409, "같은 요청을 처리 중입니다.")

@@ -60,8 +60,10 @@ function updateActions(){
  $('lamp-submit').disabled=busy||remaining===0||unresolved||(!state.messages.length&&!$('message-input').value.trim());
  $('make-diary').hidden=!state.diary&&(!success()||unsubmitted().length>0||unresolved);
  $('make-diary').textContent=state.diary?'오늘 일기 보기':'이 이야기로 일기 만들기';
- if(state.diary){$('send-message').disabled=true;$('message-input').disabled=true;$('lamp-submit').disabled=true;}
- $('quota-label').textContent=state.diary?'오늘의 일기가 있어요.':allowance.base_remaining?'전등을 눌러 마음을 나눠보세요.':`오늘 추가 대화 ${allowance.extra_remaining}회 남음`;
+ $('lamp-submit').dataset.available=String(remaining>0&&!unresolved);
+ $('lamp-submit').setAttribute('aria-label',`전등으로 이야기 보내기 · 기본 ${allowance.base_remaining}회 · 추가 ${allowance.extra_remaining}회 남음`);
+ $('quota-label').textContent=`기본 ${allowance.base_remaining}회 · 오늘 추가 ${allowance.extra_remaining}회 남음${state.diary?' · 일기는 그대로 보관돼요.':''}`;
+ if($('continue-chat')){$('continue-chat').hidden=remaining===0||unresolved||(!state.diary&&!success());$('continue-chat').disabled=busy;$('continue-chat').textContent=state.diary?'전등이와 더 이야기하기':'더 이야기할래요';}
  if(remaining===0&&!state.diary&&!unresolved)$('reply-status').textContent='오늘의 대화를 마쳤어요. 이 이야기로 일기를 남겨보세요.';
  }
  $('save-diary').disabled=busy||editing||state?.diary?.state==='saved';
@@ -85,6 +87,7 @@ async function fetchState(){if(detailId){const result=await json(`/writing/diari
 async function boot(){
  clearTimeout(poll);clearError();setBusy(true);show('loading');
  try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);}
+
  catch(failure){if(failure.status!==401){if(detailId){show('loading');$('loading-view').querySelector('.soft-spinner').hidden=true;$('loading-view').querySelector('p').textContent='일기를 열지 못했어요.';error(failure.message,failure.status===404?()=>location.assign(backURL):boot,failure.status===404?'서재로 돌아가기':'일기 다시 열기');}else{show('chat');error(failure.message,boot,'공간 다시 열기');}}}
  finally{if(!poll)setBusy(false);}
 }
@@ -115,7 +118,6 @@ async function ensureToday(){
 async function sendMessage(){
  const text=$('message-input').value.trim();if(!text)return true;
  await ensureToday();
- if(state.diary)return false;
  let pending=stored('message-request');if(!pending||pending.message!==text)pending={request_id:id(),message:text};store('message-request',pending);
  try{await json(`/writing/${state.id}/messages`,{method:'POST',data:pending});if(!same())return false;
   store('message-request',null);store('composer',null);$('message-input').value='';resizeInput();await fetchState();renderChat();return true;
@@ -135,13 +137,13 @@ async function sendLamp(requestId){
  try{
   if(!requestId&&!(await sendMessage()))return;
   if(!requestId&&!(await ensureToday()))return;
-  if(!requestId&&!unsubmitted().length){setBusy(false);if(success())await askDiary();return;}
+  if(!requestId&&!unsubmitted().length){setBusy(false);if(state.diary){toast('추가로 나눌 이야기를 입력해 주세요. 기존 일기는 그대로 보관돼요.');$('message-input').focus();}else if(success())await askDiary();return;}
   const operation=requestId||id();store('lamp-request',operation);$('reply-status').textContent='당신의 이야기를 듣고 있어요…';
   const response=await request(`/writing/${state.id}/response_stream`,{method:'POST',data:{request_id:operation},accept:'text/event-stream',signal:activeController.signal});
   await readSSE(response,text=>bubble(text,'ai',true),()=>same()&&generationEpoch===epoch);
   if(!same()||generationEpoch!==epoch)return;
   store('lamp-request',null);await fetchState();renderChat();setBusy(false);
-  scheduleDiaryPrompt(state.messages.filter(m=>m.role!=='user').slice(-3).map(m=>m.message).join(' '));
+  if(!state.diary)scheduleDiaryPrompt(state.messages.filter(m=>m.role!=='user').slice(-3).map(m=>m.message).join(' '));
  }catch(failure){for(const el of $('messages').querySelectorAll('.provisional'))el.remove();
   if(failure.name!=='AbortError'&&failure.status!==401){$('reply-status').textContent='';const operation=requestId||stored('lamp-request');try{await fetchState();}catch{}error(failure.message,()=>sendLamp(operation));}
  }finally{activeController=null;setBusy(false);}
@@ -226,6 +228,7 @@ $('cancel-edit').addEventListener('click',async()=>{if(await confirm('수정을 
 $('save-diary').addEventListener('click',saveDiary);$('discard-diary').addEventListener('click',discardDiary);
 $('add-photo').addEventListener('click',()=>$('photo-input').click());$('photo-input').addEventListener('change',event=>{const files=[...event.target.files].map(file=>({file,id:id()}));event.target.value='';void uploadPhotos(files);});
 $('retry-action').addEventListener('click',()=>retry?.());
+$('continue-chat')?.addEventListener('click',()=>{cancelDiaryPrompt();$('message-input').focus();});
 for(const button of document.querySelectorAll('.coming-soon'))button.addEventListener('click',()=>dialog(`${button.dataset.feature}은 준비 중이에요`,'지금은 홈과 서재에서 당신의 이야기를 남겨보세요.'));
 async function allowLeave(){
  cancelDiaryPrompt();
@@ -258,11 +261,11 @@ function connectNotifications(){
 window.addEventListener('pagehide',()=>{cancelDiaryPrompt();clearTimeout(poll);socket?.close(1000);activeController?.abort();revokePhotos();});
 window.addEventListener('daily:clock',async()=>{
  if(detailId||!same()||!state||busy||editing||$('workspace').dataset.view!=='chat')return;
- const writingId=state.id;
- try{const next=await json(`/writing/${writingId}`);if(!same()||busy||editing||state.id!==writingId)return;
-  if(next.date!==next.server_now.slice(0,10)){state=next;cancelDiaryPrompt();setBusy(true);try{await ensureToday();}finally{setBusy(false);}return;}
-  state.quota=next.quota;state.server_now=next.server_now;updateActions();
- }catch{/* 기존 입력을 유지하고 다음 연결에서 다시 확인한다. */}
+ const count=state.messages.length,writingId=state.id;
+ try{const next=await json(`/writing/${writingId}`);if(!same()||busy||editing||state.id!==writingId)return;state=next;
+  if(state.date!==state.server_now.slice(0,10)){cancelDiaryPrompt();setBusy(true);try{await ensureToday();}finally{setBusy(false);}return;}
+  if(count!==state.messages.length)await restore();else updateActions();
+ }catch{/* 기존 입력은 유지하고 다음 연결에서 다시 조회한다. */}
 });
 document.addEventListener('visibilitychange',()=>{cancelDiaryPrompt();if(document.visibilityState==='visible'&&state&&!busy&&!editing)void refresh();});
 if(!token())void expire();else{void boot();connectNotifications();}

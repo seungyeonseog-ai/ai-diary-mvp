@@ -1,4 +1,4 @@
-import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261103-5d';
+import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261103-6a';
 let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null,epoch=0,activeController=null,photoURLs=[],failedPhotos=[];
 const detailId=$('workspace').dataset.diaryId||null;
 const requestedBack=safeNext(new URLSearchParams(location.search).get('return')||'/library','/library');
@@ -185,7 +185,7 @@ function connectNotifications(){
  window.globalNotificationManager=window.createNotificationManager?.();
  socket=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws/${encodeURIComponent(uid)}`);
  socket.onopen=()=>{if(same())socket.send(JSON.stringify({type:'authenticate',token:identity}));window.studyState?.refresh(true);};
- socket.onmessage=event=>{if(!same())return;try{const data=JSON.parse(event.data);if(['encourage_available','encourage_unavailable','seven_day_report','chart_loading_complete'].includes(data.type))window.globalNotificationManager?.storeNotification(data);}catch{}};
+ socket.onmessage=event=>{if(!same())return;try{const data=JSON.parse(event.data);window.dispatchEvent(new Event('daily:socket'));if(['encourage_available','encourage_unavailable','seven_day_report','chart_loading_complete'].includes(data.type))window.globalNotificationManager?.storeNotification(data);}catch{}};
  socket.onclose=event=>{if(![1000,1008].includes(event.code)&&same())setTimeout(connectNotifications,5000);};
 }
 window.addEventListener('pagehide',()=>{clearTimeout(poll);socket?.close(1000);activeController?.abort();revokePhotos();});

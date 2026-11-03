@@ -1,4 +1,4 @@
-import {clearIdentity} from './ui.js?v=20261103-5d';
+import {clearIdentity} from './ui.js?v=20261103-6a';
 const form=document.getElementById('loginForm'),error=document.getElementById('login-error'),username=document.getElementById('username');
 const remembered=localStorage.getItem('remembered_id');if(remembered){username.value=remembered;document.getElementById('rememberId').checked=true;}
 form.addEventListener('submit',async event=>{

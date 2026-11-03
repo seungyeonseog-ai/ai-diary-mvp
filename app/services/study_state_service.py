@@ -4,15 +4,19 @@ from app.models.db.chat_message_model import ChatMessage
 from app.models.db.study_model import (
     DiaryReport, EncouragementReport, WeeklyAnalysisReport, DiaryAnalysisReport)
 from app.utils.time_utils import KST, get_kst_now
+from app.models.db.daily_model import LetterDelivery, DailyJob, DailySettings
+from app.services.daily_service import current_hour
 
 
 def today_encouragement(db, user_id, now):
     start = datetime.combine(now.date(), datetime.min.time())
-    return db.query(EncouragementReport).filter(
+    row = db.query(EncouragementReport).filter(
         EncouragementReport.user_id == user_id,
         EncouragementReport.timestamp >= start,
         EncouragementReport.timestamp < start + timedelta(days=1)
     ).order_by(EncouragementReport.timestamp.desc(), EncouragementReport.encouragement_id.desc()).first()
+    delivery = db.get(LetterDelivery,row.encouragement_id) if row else None
+    return None if delivery and delivery.discarded else row
 
 
 def latest_weekly(db, user_id):
@@ -40,8 +44,12 @@ def study_status(db, user_id):
         DiaryAnalysisReport.user_id == user_id,
         DiaryAnalysisReport.is_used_in_weekly == False
     ).count()
-    letter_state = 'ready' if letter else (
-        'insufficient' if words < 100 else 'waiting_time' if now.hour < 10 else 'pending')
+    day=now.date().isoformat()
+    pref=db.get(DailySettings,user_id)
+    hour=current_hour(pref,day) if pref else 22
+    job=db.get(DailyJob,f'{user_id}:{day}:encouragement')
+    letter_state = 'ready' if letter else 'skipped' if job and job.state=='skipped' else (
+        'discarded' if job and job.letter_done else 'waiting_time' if now.hour<hour else 'pending')
     return {
         'user_id': user_id,
         'server_date': now.date().isoformat(),

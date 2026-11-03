@@ -25,9 +25,11 @@ import os
 from pathlib import Path
 #from app.services import endtime_event
 # from app.services.celery_app import summarize_task
-import app.tasks.session_end_event    # ← 리스너 등록용 임포트 (이걸로 저장을 시키지 않음)
+# 3분 세션 종료 요약 리스너는 날짜별 작업으로 대체했다.
 from fastapi.staticfiles import StaticFiles  # 추가 필요
-from app.services.celery_app import session_summarize_task
+from app.api.routers.daily_router import router as daily_router
+from app.core.daily_migration import require_daily_schema
+from app.models.db import daily_model
 
 
 
@@ -53,6 +55,7 @@ logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 
 Base.metadata.create_all(bind=engine) # 클래스 정의생성해서 테이블 만들기
 require_writing_schema(engine)
+require_daily_schema(engine)
 
 
 app = FastAPI()
@@ -74,6 +77,7 @@ app.include_router(study_router)
 app.include_router(constellation_router)
 app.include_router(writing_router)
 app.include_router(library_router)
+app.include_router(daily_router)
 
 
 @app.on_event("startup")
@@ -82,7 +86,8 @@ async def startup_event():
 
     # 세션 체크 백그라운드 실행
     print("🌀 전체 세션 체크 백그라운드 시작")
-    app.state.session_checker = asyncio.create_task(session_checker_all_users_loop())
+    # 예약/자정은 Celery Beat의 영속 날짜 작업으로 실행한다.
+    app.state.session_checker = None
 
 
 @app.on_event("shutdown")

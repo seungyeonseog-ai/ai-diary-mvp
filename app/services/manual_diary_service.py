@@ -22,7 +22,6 @@ def save_manual_diary(bind, user_id: int, content: str):
             start = datetime.combine(now.date(), datetime.min.time())
             existing = db.query(DiaryReport.diary_id).filter(
                 DiaryReport.user_id == user_id,
-                DiaryReport.source_type == "user",
                 DiaryReport.state != "discarded",
                 DiaryReport.timestamp >= start,
                 DiaryReport.timestamp < start + timedelta(days=1),

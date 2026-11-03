@@ -105,7 +105,7 @@ class Bundle3Tests(unittest.TestCase):
 
     def test_old_letter_is_not_today_and_is_not_returned(self):
         self.letter(when=self.now-timedelta(days=1))
-        self.assertEqual(self.status()['encouragement']['state'], 'insufficient')
+        self.assertEqual(self.status()['encouragement']['state'], 'waiting_time')
         self.assertEqual(self.client.get('/study/encourage').status_code, 404)
         self.redis.publish.assert_not_called()
 
@@ -141,15 +141,15 @@ class Bundle3Tests(unittest.TestCase):
             self.assertEqual(self.client.get(path).status_code, 401)
 
     def test_generation_thresholds_and_time_remain_distinct(self):
-        self.assertEqual(self.status()['encouragement']['state'], 'insufficient')
+        self.assertEqual(self.status()['encouragement']['state'], 'waiting_time')
         self.words(55)
         data = self.status()
         self.assertTrue(data['diary']['available'])
-        self.assertEqual(data['encouragement']['state'], 'insufficient')
+        self.assertEqual(data['encouragement']['state'], 'waiting_time')
         self.words(45)
         self.now = self.now.replace(hour=9)
         self.assertEqual(self.status()['encouragement']['state'], 'waiting_time')
-        self.now = self.now.replace(hour=10)
+        self.now = self.now.replace(hour=22)
         self.assertEqual(self.status()['encouragement']['state'], 'pending')
 
     def test_other_owner_assistant_and_yesterday_words_do_not_unlock_today(self):

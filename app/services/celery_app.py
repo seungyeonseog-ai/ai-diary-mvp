@@ -37,6 +37,7 @@ redis_client = redis.Redis(
 
 # 1) 브로커 URL은 이미 환경변수에서 읽어옵니다.
 celery = Celery("matabus")
+celery.conf.timezone = 'Asia/Seoul'
 
 @celery.task
 def test_task():
@@ -177,27 +178,7 @@ def _mark_embedding_finished(db, user_id: int, session_id: str, *, success: bool
 
 @celery.task(bind=True, autoretry_for=(Exception,), max_retries=5, retry_backoff=True)
 def session_summarize_task(self, user_id: int, session_id: str):
-    logger.info(f"▶ session_summarize_task 시작: user_id={user_id}, session_id={session_id}")
-    try:
-        # 🔥 모델 로딩 순서 보장 - 외래키 의존성을 위해
-        from app.models.db.session_log import SessionLog
-        from app.models.db.session_summary import GPTSessionSummary
-
-        from app.services.gpt_session_summary_service import GPTSessionSummaryService
-        service = GPTSessionSummaryService()
-        result = service.create_session_summary(user_id, session_id)
-        if not isinstance(result, dict) or not isinstance(result.get("summary"), str) or not result["summary"].strip():
-            logger.warning("session_summary_not_saved user_id=%s", user_id)
-            return {"status": "not_summarized"}
-        logger.info(f"✅ session_summarize_task 완료: user_id={user_id}, session_id={session_id}")
-
-        # 요약 완료 후 임베딩 태스크 호출
-        session_embed_task.delay(user_id=user_id, session_id=session_id)
-
-    except Exception as exc:
-        logger.error("session_summary_task_failed user_id=%s error_type=%s", user_id, type(exc).__name__)
-        raise self.retry(exc=exc)
-
+    return {'status':'replaced_by_daily_jobs'}
 
 
 
@@ -363,57 +344,20 @@ def daily_reset_notifications():
 
 @celery.task
 def check_encouragement_conditions_periodic():
-    """격려 메시지 생성 조건 확인 (5분마다 실행)"""
-    logger.info("▶ 격려 메시지 생성 조건 체크 시작")
-    try:
-        db = next(get_db())
-        # 모든 활성 유저 조회
-        users = db.query(User).all()
+    """개인 예약/자정 영속 작업 디스패치. 구형 Beat 작업명도 같은 경로 사용."""
+    from app.core.connection import engine
+    from app.services.daily_service import dispatch, publish_notices
+    for key in dispatch(engine):
+        run_daily_job.delay(key)
+    publish_notices(engine,redis_client.publish)
 
-        for user in users:
-            try:
-                # 1. 현재 시간이 10시 이후인지 확인 (로컬 시간 기준)
-                now = get_kst_now()
-                if now.hour < 10:
-                    logger.info(f"ℹ️ 아직 10시 이전: user_id={user.id}, 현재시간={now.hour}시")
-                    continue
 
-                # 2. 오늘 날짜로 encouragement_report 조회
-                today = get_kst_now().date()
-                existing_encouragement = db.query(EncouragementReport).filter(
-                    EncouragementReport.user_id == user.id,
-                    func.date(EncouragementReport.timestamp) == today
-                ).first()
-
-                if existing_encouragement:
-                    logger.info(f"ℹ️ 이미 오늘 격려 메시지 생성됨: user_id={user.id}")
-                    continue
-
-                # 3. Repository에서 user token 확인 (100 이상인지)
-                chat_repo = TodayChatMessageRepository()
-                combined_content, total_tokens = chat_repo.get_today_user_chat_content_and_tokens(user.id)
-
-                if total_tokens < 100:
-                    logger.info(f"❌ 토큰 수 부족: user_id={user.id}, tokens={total_tokens}")
-                    continue
-
-                # 4. 모든 조건 만족 시 서비스 호출
-                logger.info(f"✅ 격려 메시지 생성 조건 만족: user_id={user.id}, tokens={total_tokens}")
-                service = EncourageDiaryService(db)
-                result = service.create_encouragement(user.id)
-
-                if result:
-                    logger.info(f"✅ 격려 메시지 생성 완료: user_id={user.id}")
-                else:
-                    logger.error(f"❌ 격려 메시지 생성 실패: user_id={user.id}")
-
-            except Exception as e:
-                logger.error(f"❌ 유저 {user.id} 격려 조건 체크 실패: {e}")
-
-    except Exception as e:
-        logger.error(f"❌ 격려 조건 체크 실패: {e}")
-    finally:
-        db.close()
+@celery.task
+def run_daily_job(key):
+    from app.core.connection import engine
+    from app.services.daily_service import run_job,publish_notices
+    run_job(engine,key)
+    publish_notices(engine,redis_client.publish)
 
 
 
@@ -453,7 +397,7 @@ celery.conf.beat_schedule = {
     },
     'check-encouragement-conditions': {
         'task': 'app.services.celery_app.check_encouragement_conditions_periodic',
-        'schedule': 300.0,  # 5분마다
+        'schedule': 60.0,  # 예약/자정/실패 복구 확인
     },
     'daily-diary-analysis': {
         'task': 'app.services.celery_app.daily_diary_analysis',

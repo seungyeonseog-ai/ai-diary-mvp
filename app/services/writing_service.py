@@ -75,6 +75,15 @@ def start_writing(bind, user_id):
             Writing.state != "discarded").first()
         if existing:
             return existing
+        # 기존 자료도 당일 작성 진입에서 같은 일기로 연결한다.
+        today_diary = db.query(DiaryReport).filter(DiaryReport.user_id==user_id,
+            DiaryReport.state!='discarded', DiaryReport.timestamp>=datetime.combine(now.date(),datetime.min.time()),
+            DiaryReport.timestamp<datetime.combine(now.date()+timedelta(days=1),datetime.min.time())).first()
+        if today_diary:
+            row=Writing(id=str(uuid4()),user_id=user_id,source_date=now.date().isoformat(),
+                state='active',diary_id=today_diary.diary_id,created_at=now)
+            db.add(row)
+            return row
         row = Writing(id=str(uuid4()), user_id=user_id, source_date=now.date().isoformat(),
                       state="active", created_at=now)
         db.add(row)
@@ -203,6 +212,12 @@ def complete_operation(bind, user_id, operation_id, token, result):
         if writing.state != "active":
             raise WritingError(409, "종료된 작성입니다.")
         if op.kind == "diary":
+            start = datetime.fromisoformat(writing.source_date)
+            duplicate = db.query(DiaryReport).filter(DiaryReport.user_id==user_id,
+                DiaryReport.state!='discarded',DiaryReport.timestamp>=start,
+                DiaryReport.timestamp<start+timedelta(days=1)).first()
+            if duplicate:
+                raise WritingError(409,'이미 이 날짜의 일기가 있어요. 서재에서 확인해 주세요.')
             diary = DiaryReport(user_id=user_id, title=result["title"], content=result["body"],
                                 source_type="ai", state="draft", version=1,
                                 timestamp=writing.created_at, updated_at=now)
@@ -255,6 +270,11 @@ def save_diary(bind, user_id, diary_id, version):
             return diary_payload(diary)
         if diary.state != "draft" or diary.version != version:
             raise WritingError(409, "일기가 변경되었습니다. 다시 열어 확인해 주세요.")
+        start=datetime.combine(diary.timestamp.date(),datetime.min.time())
+        if db.query(DiaryReport).filter(DiaryReport.user_id==user_id,DiaryReport.diary_id!=diary_id,
+                DiaryReport.state!='discarded',DiaryReport.timestamp>=start,
+                DiaryReport.timestamp<start+timedelta(days=1)).first():
+            raise WritingError(409,'이미 이 날짜의 일기가 있어요. 서재에서 확인해 주세요.')
         diary.state, diary.updated_at = "saved", get_kst_now()
         diary.version += 1
         return diary_payload(diary)

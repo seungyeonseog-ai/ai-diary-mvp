@@ -1,0 +1,83 @@
+import {json,node,token,owner,toast,confirm} from './ui.js?v=20261103-6a';
+const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
+let stopped=false,timer,lastIds=null,snapshot=0,requesting=false,letterId=null,revision=0;
+const panel=node('dialog','ui-dialog daily-panel');panel.setAttribute('aria-label','편지와 알림');document.body.append(panel);
+const title=node('h2'),content=node('div','daily-content'),error=node('p','daily-error'),close=node('button','secondary','닫기');
+close.addEventListener('click',()=>panel.close());panel.append(title,content,error,close);
+function show(name){revision++;title.textContent=name;content.replaceChildren();error.textContent='';if(!panel.open)panel.showModal();return revision;}
+function fail(exc){if(same())error.textContent=exc.message;}
+async function settings(){
+ const epoch=show('응원 받을 시간');
+ try{const data=await json('/daily/settings');if(!same()||epoch!==revision)return;
+  const label=node('label','','편안하게 응원을 받을 시간을 골라주세요. (한국 시간)'),select=node('select');select.setAttribute('aria-label','응원 예약 시간');
+  for(let hour=0;hour<24;hour++){const option=node('option','',`${String(hour).padStart(2,'0')}:00`);option.value=hour;select.append(option);}select.value=data.hour;
+  const note=node('p','','오늘 편지를 이미 받았다면 변경한 시간은 내일부터 적용돼요.'),save=node('button','primary','시간 저장');
+  save.addEventListener('click',async()=>{save.disabled=true;error.textContent='';try{const result=await json('/daily/settings',{method:'PUT',data:{hour:Number(select.value)}});if(!same())return;toast(`응원 시간 ${String(result.hour).padStart(2,'0')}:00 · ${result.effective_date}부터 적용`);panel.close();await refresh();}catch(exc){fail(exc);}finally{save.disabled=false;}});
+  label.append(select);content.append(label,note,save);
+ }catch(exc){fail(exc);}
+}
+async function list(view='pending'){
+ const epoch=show(view==='archive'?'보관한 편지':'편지 알림');
+ try{const data=await json(`/daily/letters?view=${view}`);if(!same()||epoch!==revision)return;
+  if(!data.items.length)content.append(node('p','',view==='archive'?'아직 보관한 편지가 없어요.':'처리하지 않은 편지가 없어요.'));
+  for(const item of data.items){const button=node('button','letter-list-item',`${item.date}의 응원 편지${item.viewed?' · 열어본 편지':''}`);button.addEventListener('click',()=>openLetter(item.id,view));content.append(button);}
+  if(view==='pending')content.append(node('p','soft-copy','오늘 받은편지가 비활성화된 뒤에도 놓친 편지는 여기에서 열 수 있어요.'));
+ }catch(exc){fail(exc);}
+}
+async function openLetter(id,origin='today'){
+ const epoch=show('당신에게 온 편지');letterId=id;
+ try{const data=await json(`/daily/letters/${id}`);if(!same()||epoch!==revision)return;
+  content.append(node('p','letter-date',data.date),node('p','letter-body',data.body));
+  // 열람만 기록한다. 저장/폐기 선택이나 알림 제거를 대신하지 않는다.
+  void json(`/daily/letters/${id}/view`,{method:'POST'}).catch(fail);
+  const actions=node('div','daily-actions');
+  if(data.archive_deleted){actions.append(node('p','','보관함에서 삭제한 편지예요.'));}
+  else if(!data.saved){for(const [action,label]of [['save','보관함에 저장'],['discard','폐기']]){
+   const button=node('button',action==='save'?'primary':'secondary',label);button.addEventListener('click',()=>act(id,action,origin));actions.append(button);
+  }}else{actions.append(node('p','','보관한 편지예요.'));if(origin==='archive'){const button=node('button','secondary','보관함에서 삭제');button.addEventListener('click',()=>act(id,'archive-delete',origin));actions.append(button);}}
+  content.append(actions);
+ }catch(exc){fail(exc);}
+}
+async function act(id,action,origin){
+ if(action!=='save'&&await confirm(action==='discard'?'편지를 폐기할까요?':'보관함에서 삭제할까요?',action==='discard'?'폐기한 오늘 편지는 다시 받을 수 없어요.':'보관함에서 이 편지를 삭제합니다.')!=='ok')return;
+ const buttons=[...content.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
+ try{await json(`/daily/letters/${id}/${action}`,{method:'POST'});if(!same())return;panel.close();await refresh();window.dispatchEvent(new Event('daily:changed'));toast(action==='save'?'편지를 보관했어요.':'처리했어요.');}
+ catch(exc){fail(exc);buttons.forEach(b=>b.disabled=false);}
+}
+async function today(){try{const data=await json('/daily/inbox');if(!same())return;if(data.letter)await openLetter(data.letter.id);else toast(data.state==='skipped'?'예약 시각에 대화가 없어 오늘 편지는 쉬어가요.':data.state==='discarded'?'오늘 편지는 이미 처리했어요.':`응원 예약 시간은 ${data.hour}:00예요.`);}catch(exc){toast(exc.message);}}
+async function inboxStatus(){
+ const button=document.getElementById('daily-inbox');if(!button)return;
+ try{const data=await json('/daily/inbox');if(!same())return;button.disabled=!data.letter;
+  document.getElementById('daily-inbox-status').textContent=data.letter?'오늘의 편지가 도착했어요.':data.state==='skipped'?'예약 시각에 대화가 없어 오늘 편지는 쉬어가요.':data.state==='discarded'?'오늘 편지는 이미 처리했어요.':`오늘의 응원 예약은 ${String(data.hour).padStart(2,'0')}:00예요.`;
+ }catch(exc){button.disabled=true;document.getElementById('daily-inbox-status').textContent=exc.message;}
+}
+function badge(count){for(const element of document.querySelectorAll('.library-notice-count')){element.hidden=count===0;element.textContent=count;element.setAttribute('aria-label',`새 결과 ${count}개`);}}
+async function refresh(){
+ if(!identity||!same()||stopped||requesting)return;requesting=true;
+ try{const data=await json('/daily/notices');if(!same())return;
+  snapshot=data.through_id;badge(data.count);
+  const ids=new Set(data.items.map(x=>x.id));
+  if(lastIds!==null){const arrivals=data.items.filter(x=>!lastIds.has(x.id)&&!x.seen);if(arrivals.length){const banner=document.getElementById('daily-arrival');banner.hidden=false;banner.textContent=arrivals.some(x=>x.kind==='letter')?'새 응원 편지가 도착했어요. 눌러서 확인해 보세요.':'새 주간 차트가 도착했어요. 서재에서 확인해 보세요.';banner.onclick=()=>{banner.hidden=true;if(arrivals.some(x=>x.kind==='letter'))void list();else location.assign('/library');};window.dispatchEvent(new Event('daily:changed'));}}
+  const initial=lastIds===null;lastIds=ids;
+  if(initial&&location.pathname==='/library'){await json('/daily/notices/seen',{method:'POST',data:{through_id:snapshot}});if(same())badge(0);}
+ }catch(exc){if(same()){const status=document.getElementById('daily-sync-status');if(status)status.textContent='알림 연결을 확인 중이에요.';}}
+ finally{requesting=false;}
+}
+function start(){
+ if(!identity)return;
+ const banner=node('button','daily-arrival');banner.id='daily-arrival';banner.hidden=true;banner.setAttribute('aria-live','polite');document.body.append(banner);
+ const notice=document.getElementById('daily-notifications');notice?.addEventListener('click',()=>list());
+ document.getElementById('daily-archive')?.addEventListener('click',()=>list('archive'));
+ document.getElementById('daily-inbox')?.addEventListener('click',today);
+ // 기존 설정 버튼의 계정 메뉴와 동시에 열리지 않게 별도 이벤트를 받는다.
+ document.getElementById('settings')?.addEventListener('click',event=>{event.stopImmediatePropagation();void settings();},true);
+ void refresh();void inboxStatus();timer=setInterval(()=>{void refresh();void inboxStatus();window.dispatchEvent(new Event('daily:clock'));},15000);
+ void json('/daily/settings').then(data=>{if(same()&&!data.configured&&location.pathname==='/')void settings();}).catch(()=>{});
+}
+window.addEventListener('daily:socket',()=>void refresh());
+window.addEventListener('daily:changed',()=>void inboxStatus());
+window.addEventListener('space:identity-cleared',()=>{stopped=true;revision++;clearInterval(timer);panel.close();content.replaceChildren();badge(0);document.getElementById('daily-arrival')?.remove();});
+window.addEventListener('pagehide',()=>{stopped=true;clearInterval(timer);});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refresh();});
+start();
+export {settings,list,openLetter};

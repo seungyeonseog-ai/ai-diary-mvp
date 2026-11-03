@@ -124,13 +124,13 @@ class CoreTests(unittest.TestCase):
         for data in ({},{'content':None},{'content':12},{'content':[]},{'content':''},{'content':' \n '},{'content':'a'*50001}):
             self.assertEqual(self.client.post('/study/user/diary/save',json=data).status_code,422)
         with self.sessions() as db:self.assertEqual(db.query(DiaryReport).count(),0)
-    def test_manual_owner_and_duplicate_and_ai_independent(self):
+    def test_manual_owner_and_daily_limit_includes_ai(self):
         with self.sessions() as db:
             db.add(DiaryReport(user_id=1,source_type='ai',content='synthetic'));db.commit()
-        self.assertEqual(self.client.post('/study/user/diary/save',json={'content':'  합성 일기  ','user_id':2,'source_type':'ai'}).status_code,200)
+        self.assertEqual(self.client.post('/study/user/diary/save',json={'content':'  합성 일기  ','user_id':2,'source_type':'ai'}).status_code,409)
         self.assertEqual(self.client.post('/study/user/diary/save',json={'content':'second'}).status_code,409)
         self.uid=2;self.assertEqual(self.client.post('/study/user/diary/save',json={'content':'other'}).status_code,200)
-        with self.sessions() as db:self.assertEqual(db.query(DiaryReport).filter_by(user_id=1,source_type='user').one().content,'합성 일기')
+        with self.sessions() as db:self.assertEqual(db.query(DiaryReport).filter_by(user_id=1,source_type='user').count(),0)
     def test_manual_concurrent_requests_store_one(self):
         barrier=threading.Barrier(2)
         def run(_):
@@ -167,15 +167,15 @@ class CoreTests(unittest.TestCase):
     def test_summary_task_none_never_dispatches_embedding(self):
         with patch.object(summary,'GPTSessionSummaryService') as service,patch.object(tasks.session_embed_task,'delay') as embed:
             service.return_value.create_session_summary.return_value=None
-            self.assertEqual(tasks.session_summarize_task.run(1,'s1')['status'],'not_summarized');embed.assert_not_called()
-    def test_summary_task_success_dispatches_embedding(self):
+            self.assertEqual(tasks.session_summarize_task.run(1,'s1')['status'],'replaced_by_daily_jobs');embed.assert_not_called()
+    def test_retired_summary_task_never_calls_ai_or_embedding(self):
         with patch.object(summary,'GPTSessionSummaryService') as service,patch.object(tasks.session_embed_task,'delay') as embed:
             service.return_value.create_session_summary.return_value={'summary':'synthetic'}
-            tasks.session_summarize_task.run(1,'s1');embed.assert_called_once_with(user_id=1,session_id='s1')
+            tasks.session_summarize_task.run(1,'s1');embed.assert_not_called();service.assert_not_called()
     def test_summary_task_failure_does_not_dispatch_embedding(self):
         with patch.object(summary,'GPTSessionSummaryService') as service,patch.object(tasks.session_embed_task,'delay') as embed,patch.object(tasks.session_summarize_task,'retry',side_effect=RuntimeError('synthetic-retry')):
             service.return_value.create_session_summary.side_effect=RuntimeError('private-sql')
-            with self.assertRaises(RuntimeError):tasks.session_summarize_task.run(1,'s1')
+            self.assertEqual(tasks.session_summarize_task.run(1,'s1')['status'],'replaced_by_daily_jobs');service.assert_not_called()
             embed.assert_not_called()
     def test_routes_require_authentication(self):
         self.app.dependency_overrides.pop(get_current_user)

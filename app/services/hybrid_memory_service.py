@@ -75,12 +75,14 @@ class HybridMemoryService:
         rrf_k: int = 60,
         sparse_k: int = 200,
         dense_k: int = 50,
+        strict_errors: bool = False,
     ):
         self.sparse = sparse or SparseIndexService()
         self.dense = dense or VectorDBService()
         self.RRF_K = rrf_k
         self.SPARSE_K = sparse_k
         self.DENSE_K = dense_k
+        self.strict_errors = strict_errors
 
     # ---------------------- Public API ----------------------
     def hybrid_retrieve(self, user_query: str, user_id: int, yymmdd: str, top_k: int = 12) -> List[Dict[str, Any]]:
@@ -233,6 +235,8 @@ class HybridMemoryService:
                     pass
         except Exception:
             logger.exception("HYB_ERROR sparse_search_failed")
+            if self.strict_errors:
+                raise
         return hits
 
     def _search_dense(self, q: str, *, user_id: int) -> List[Dict[str, Any]]:
@@ -289,6 +293,8 @@ class HybridMemoryService:
                     pass
         except Exception:
             logger.exception("HYB_ERROR dense_search_failed")
+            if self.strict_errors:
+                raise
         return hits
 
     # ---------------------- Fusion & Scoring ----------------------

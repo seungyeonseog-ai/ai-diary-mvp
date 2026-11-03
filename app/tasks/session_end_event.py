@@ -20,6 +20,7 @@ def on_session_end(mapper, conn, target: SessionLog):
     SessionLog.end_time 이 None -> 값 으로 바뀌는 '최초 종료 확정' 순간에만 트리거.
     요약 → 임베딩 순서 보장.
     """
+    return  # 날짜별 예약/자정 처리로 대체. 다른 import 경로에서도 자동 요약 금지.
     hist = inspect(target).attrs.end_time.history
 
     # 과거 None 이고 새 값이 생겼을 때만 동작

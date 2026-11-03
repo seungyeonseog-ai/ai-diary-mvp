@@ -123,3 +123,8 @@ async def report_section(request: Request):
 
 print("✅ [html_router.py] 파일 로딩됨")
 print("✅ router 변수 존재 여부:", 'router' in globals())
+
+
+@router.get('/letters',response_class=HTMLResponse)
+def letters_page(request:Request):
+    return templates.TemplateResponse('letters.html',{'request':request,'active_tab':'library'},headers={'Cache-Control':'no-store'})

@@ -12,6 +12,9 @@ def migrate_access_schema(engine):
     with engine.begin() as connection:
         connection.exec_driver_sql("BEGIN IMMEDIATE")
         AccountAccess.__table__.create(connection, checkfirst=True)
+        columns = {c['name'] for c in inspect(connection).get_columns('account_access')}
+        if 'onboarding_completed_at' not in columns:
+            connection.exec_driver_sql('ALTER TABLE account_access ADD COLUMN onboarding_completed_at DATETIME')
         AccountPlanChoice.__table__.create(connection, checkfirst=True)
         with Session(bind=connection) as db:
             for user in db.scalars(select(User)):
@@ -26,3 +29,5 @@ def require_access_schema(engine):
     required = {"user_id", "trial_started_at", "trial_expires_at", "plan"}
     if not required <= columns:
         raise RuntimeError("체험 기간 스키마를 확인해 주세요: tools/migrate_access.py")
+    if 'onboarding_completed_at' not in columns:
+        raise RuntimeError("체험 안내 스키마 이행 필요: tools/migrate_access.py")

@@ -10,6 +10,7 @@ class AccountAccess(Base):
     trial_expires_at = Column(DateTime)
     # 첫 이행의 NOT NULL 컬럼과 호환하기 위한 고정값. 권한 판정에는 사용하지 않는다.
     plan = Column(String(30), nullable=False, default="free")
+    onboarding_completed_at = Column(DateTime)
 
 
 class AccountPlanChoice(Base):

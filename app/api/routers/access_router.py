@@ -22,6 +22,7 @@ def current(db: Session = Depends(get_db), user: User = Depends(get_current_user
     now = get_kst_now()
     row = db.get(AccountAccess,user.id)
     return {**access(db,user.id,now), **selected_plan(db,user.id), "server_now":now.isoformat(),
+            "onboarding_complete":bool(row and row.onboarding_completed_at),
             "selection_mode":"preference_only",
             "plans":[{"id":key,"label":LABELS[key],"features":list(features)} for key,features in PLANS.items()]}
 
@@ -39,3 +40,11 @@ def choose(data: ChoiceInput, db: Session = Depends(get_db), user: User = Depend
             return choose_plan(session,user.id,data.request_id,data.plan,get_kst_now())
     except ValueError:
         raise HTTPException(409,"같은 요청 ID에 다른 이용권을 선택했어요. 상태를 다시 확인해 주세요.") from None
+
+
+@router.post('/onboarding')
+def complete_onboarding(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    with transaction(db.get_bind(),user.id) as session:
+        row=ensure_account(session,session.get(User,user.id))
+        row.onboarding_completed_at=row.onboarding_completed_at or get_kst_now()
+    return {'complete':True}

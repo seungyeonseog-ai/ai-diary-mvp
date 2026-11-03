@@ -6,7 +6,7 @@ const title=node('h2'),content=node('div','daily-content'),error=node('p','daily
 panel.append(title,content,error,close);
 function show(name){revision++;title.textContent=name;content.replaceChildren();error.textContent='';if(!panel.open)panel.showModal();return revision;}
 function fail(exc){if(same())error.textContent=exc.message;}
-async function settings(){
+async function settings({waitForClose=false}={}){
  const epoch=show('응원 받을 시간');
  try{const data=await json('/daily/settings');if(!same()||epoch!==revision)return;
   const label=node('label','','편안하게 응원을 받을 시간을 골라주세요. (한국 시간)'),select=node('select');select.setAttribute('aria-label','응원 예약 시간');
@@ -14,6 +14,7 @@ async function settings(){
   const note=node('p','','오늘 편지를 이미 받았다면 변경한 시간은 내일부터 적용돼요.'),save=node('button','primary','시간 저장');
   save.addEventListener('click',async()=>{save.disabled=true;error.textContent='';try{const result=await json('/daily/settings',{method:'PUT',data:{hour:Number(select.value)}});if(!same())return;toast(`응원 시간 ${String(result.hour).padStart(2,'0')}:00 · ${result.effective_date}부터 적용`);panel.close();await refresh();}catch(exc){fail(exc);}finally{save.disabled=false;}});
   label.append(select);content.append(label,note,save);
+  if(waitForClose)await new Promise(resolve=>panel.addEventListener('close',resolve,{once:true}));
  }catch(exc){fail(exc);}
 }
 async function list(view='pending'){
@@ -54,7 +55,7 @@ function start(){
  // 기존 설정 버튼의 계정 메뉴와 동시에 열리지 않게 별도 이벤트를 받는다.
  document.getElementById('settings')?.addEventListener('click',event=>{event.stopImmediatePropagation();void settings();},true);
  void refresh();void inboxStatus();timer=setInterval(()=>{void refresh();void inboxStatus();window.dispatchEvent(new Event('daily:clock'));},15000);
- void json('/daily/settings').then(data=>{if(same()&&!data.configured&&location.pathname==='/')void settings();}).catch(()=>{});
+ // 첫 안내와 응원 설정은 access_status.js의 한 흐름으로 제공한다.
 }
 window.addEventListener('daily:socket',()=>void refresh());
 window.addEventListener('daily:changed',()=>void inboxStatus());

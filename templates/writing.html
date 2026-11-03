@@ -1,6 +1,6 @@
 {% extends "ui_base.html" %}
 {% block body_class %}space-page{% endblock %}
-{% block head %}{% if diary_id %}<link rel="stylesheet" href="/static/css/library.css?v=20261103-7c">{% endif %}{% endblock %}
+{% block head %}{% if diary_id %}<link rel="stylesheet" href="/static/css/library.css?v=20261103-7c">{% endif %}<link rel="stylesheet" href="/static/css/writing.css?v=20261103-8a">{% endblock %}
 {% block content %}
 {% include "space_sidebar.html" %}
 <main id="workspace" class="workspace" aria-busy="true" data-diary-id="{{diary_id|default('')}}">
@@ -22,14 +22,14 @@
  <section id="diary-view" class="diary-view" hidden aria-label="오늘의 일기">
   <div class="diary-lamp"><img src="/static/images/space/lamp-default-v1.png" alt=""></div>
   <article class="diary-paper"><p id="diary-date" class="diary-date"></p><div class="diary-title-row"><h1 id="diary-title"></h1><span id="diary-state" class="state-tag"></span></div><div id="diary-body" class="diary-body"></div>
-   <form id="edit-form" hidden><label for="edit-title">제목</label><input id="edit-title" maxlength="500" required><label for="edit-body">본문</label><textarea id="edit-body" rows="9" maxlength="50000" required></textarea><div class="edit-actions"><button id="cancel-edit" type="button" class="text-button">취소</button><button class="primary" type="submit">수정 내용 저장</button></div></form>
+   <form id="edit-form" hidden><label for="edit-title">제목</label><input id="edit-title" maxlength="500" required><label for="edit-body">본문</label><textarea id="edit-body" rows="9" maxlength="50000" required></textarea></form>
    <div id="photos" class="photos" aria-label="첨부 사진"></div><div id="photo-errors" class="photo-errors" aria-live="polite"></div>
    <footer class="diary-actions"><div class="diary-tools"><button id="add-photo" class="tool-button">{{icon('photo')}}<span>사진 추가</span></button><input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
-    <button id="edit-diary" class="tool-button">{{icon('edit')}}<span>수정</span></button><button id="discard-diary" class="tool-button danger">{{icon('trash')}}<span>폐기</span></button></div><button id="save-diary" class="primary save-button">저장</button></footer>
+    <button id="edit-diary" class="tool-button">{{icon('edit')}}<span>수정</span></button><button id="discard-diary" class="tool-button danger">{{icon('trash')}}<span>폐기</span></button></div><div id="edit-actions" class="edit-actions" hidden><button id="cancel-edit" type="button" class="text-button">취소</button><button id="apply-edit" class="primary" type="submit" form="edit-form">저장</button></div><button id="save-diary" class="primary save-button">저장</button></footer>
    <p id="save-note" class="save-note" role="status"></p>
   </article>
  </section>
  <section id="error-panel" class="error-panel" hidden role="alert"><p id="error-message"></p><button id="retry-action" class="secondary">다시 시도</button></section>
 </main>
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261103-7c"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261103-8b"></script>{% endblock %}

@@ -12,6 +12,7 @@ from app.models.db.writing_model import SummaryRange
 from app.models.db.study_model import EncouragementReport, WeeklyAnalysisReport
 from app.services.writing_service import transaction, day_messages, WritingError, owned, format_users
 from app.utils.time_utils import get_kst_now
+from app.services.access_service import permits
 
 
 def preference(db, uid, now):
@@ -176,7 +177,9 @@ def run_job(bind,key,generate=None,search=None,index=None,now=None):
             errors.append(type(exc).__name__)
     # 오늘을 벗어나면 편지는 신규 생성/발행하지 않고 요약 복구만 한다.
     if job.phase=='encouragement' and not job.letter_done:
-        if job.source_date!=now.date().isoformat():
+        with Session(bind) as db:
+            allowed = permits(db, uid, 'encouragement', now if fixed_clock else get_kst_now())
+        if job.source_date!=now.date().isoformat() or not allowed:
             checkpoint(bind,uid,key,lease,letter_done=True)
             job.letter_done=True
         else:
@@ -198,8 +201,9 @@ def run_job(bind,key,generate=None,search=None,index=None,now=None):
                         live=db.get(DailyJob,key)
                         if live.lease_token!=lease:
                             raise RuntimeError('Daily lease lost')
+                        # 생성 도중 체험/이용 기간 종료 또는 기능 변경도 발행 전에 확인.
                         old=db.query(LetterDelivery).filter_by(user_id=uid,source_date=job.source_date).first()
-                        if not old:
+                        if not old and permits(db,uid,'encouragement',save_now):
                             report=EncouragementReport(user_id=uid,encourage_content=job.letter_result['encourage_content'],
                                 music=[],singer=[],timestamp=save_now)
                             db.add(report);db.flush()

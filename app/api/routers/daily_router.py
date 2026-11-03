@@ -10,6 +10,7 @@ from app.models.db.daily_model import DailyJob, DailySettings, LetterDelivery, R
 from app.services import daily_service as service
 from app.services.writing_service import transaction, WritingError, owned
 from app.utils.time_utils import get_kst_now
+from app.services.access_service import permits
 
 router=APIRouter(prefix='/daily',tags=['daily'])
 
@@ -47,7 +48,7 @@ def inbox(db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     pref=db.get(DailySettings,user.id)
     hour=service.current_hour(pref,day) if pref else 22
     job=db.get(DailyJob,f'{user.id}:{day}:encouragement')
-    state='ready' if row else 'discarded' if job and job.letter_done else 'skipped' if job and job.state=='skipped' else 'waiting_time' if now.hour<hour else 'pending'
+    state='ready' if row else 'unavailable' if not permits(db,user.id,'encouragement',now) else 'discarded' if job and job.letter_done else 'skipped' if job and job.state=='skipped' else 'waiting_time' if now.hour<hour else 'pending'
     return {'server_date':day,'state':state,'hour':hour,'letter':service.letter_payload(db,row) if row else None}
 
 

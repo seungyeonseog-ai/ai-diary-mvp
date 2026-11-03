@@ -8,7 +8,7 @@ async function welcome(data){
  try{
   if(await dialog('7일 무료 체험을 시작해요',`가입일을 포함한 7일 동안 슈퍼패스 기능을 이용해요.\n체험 종료: ${label(data.trial_expires_at)} (한국 시간)`,[{label:'다음',value:'next',primary:true}])!=='next'||!same())return;
   if(await dialog('전등이와 함께 기록해 보세요','이야기를 남기고 전등을 누르면 답변해요. 기본 1회와 하루 추가 2회, 원하는 시각의 저녁 응원, 조건을 채운 주간 차트를 체험해요.\n주간은 첫 대화부터 7일·최소 3개 날짜의 하루 분석이 필요하며 체험이 자동 연장되지는 않아요.',[{label:'응원 시간 정하기',value:'settings',primary:true}])!=='settings'||!same())return;
-  const {settings}=await import('./daily.js?v=20261103-9a');await settings({waitForClose:true});
+  const {settings}=await import('./daily.js?v=20261103-10g7');await settings({waitForClose:true});
   // 시간 저장에 성공했을 때만 다음 방문의 자동 안내를 마친다.
   const preference=await json('/daily/settings');if(same()&&preference.configured)await json('/account/onboarding',{method:'POST'});
  }finally{welcoming=false;}

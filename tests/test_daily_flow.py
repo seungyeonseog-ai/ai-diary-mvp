@@ -33,7 +33,7 @@ class DailyTests(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.now=datetime(2026,11,3,22)
         with Session(self.engine) as db:
-            for uid in (1,2):db.add(User(id=uid,username=f's{uid}',email=f's{uid}@example.org',nickname='합성',hashed_password='unused'))
+            for uid in (1,2):db.add(User(id=uid,username=f's{uid}',email=f's{uid}@example.org',nickname='합성',hashed_password='unused',registered_at=datetime(2026,11,3)))
             db.commit()
         migrate_daily_schema(self.engine,datetime(2026,11,3))
         self.clock=patch.object(svc,'get_kst_now',side_effect=lambda:self.now).start()
@@ -63,6 +63,31 @@ class DailyTests(unittest.TestCase):
 
     def count(self,model):
         with Session(self.engine) as db:return db.query(model).count()
+
+    def test_expired_trial_keeps_memory_summary_but_no_new_letter(self):
+        with Session(self.engine) as db:
+            db.get(User,1).registered_at=datetime(2026,10,1);db.commit()
+        self.message();self.run_all()
+        self.assertEqual(self.count(SummaryRange),1)
+        self.assertEqual(self.count(EncouragementReport),0)
+        self.assertEqual([call.args[0] for call in self.ai.call_args_list],['summary'])
+        self.assertEqual(self.client.get('/daily/inbox').json()['state'],'unavailable')
+
+    def test_letter_generated_during_access_change_is_not_delivered(self):
+        original=self.ai.side_effect
+        def change_access(kind,*args):
+            result=original(kind,*args)
+            if kind=='letter':
+                with Session(self.engine) as db:
+                    db.get(User,1).registered_at=datetime(2026,10,1);db.commit()
+            return result
+        self.ai.side_effect=change_access
+        self.message();self.run_all()
+        self.assertEqual(self.count(SummaryRange),1)
+        self.assertEqual(self.count(EncouragementReport),0)
+        self.assertEqual(self.count(ResultNotice),0)
+        with Session(self.engine) as db:
+            self.assertTrue(db.get(DailyJob,'1:2026-11-03:encouragement').letter_done)
 
     def test_no_dialogue_then_late_no_letter_but_midnight_summary(self):
         self.run_all();self.message(self.now+timedelta(minutes=1));self.now+=timedelta(hours=1);self.run_all()

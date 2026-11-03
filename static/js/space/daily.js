@@ -30,7 +30,7 @@ async function today(){try{const data=await json('/daily/inbox');if(!same())retu
 async function inboxStatus(){
  const button=document.getElementById('daily-inbox');if(!button||document.getElementById('letters-workspace'))return;
  try{const data=await json('/daily/inbox');if(!same())return;button.disabled=!data.letter;
-  document.getElementById('daily-inbox-status').textContent=data.letter?'오늘의 편지가 도착했어요.':data.state==='skipped'?'예약 시각에 대화가 없어 오늘 편지는 쉬어가요.':data.state==='discarded'?'오늘 편지는 이미 처리했어요.':`오늘의 응원 예약은 ${String(data.hour).padStart(2,'0')}:00예요.`;
+  document.getElementById('daily-inbox-status').textContent=data.letter?'오늘의 편지가 도착했어요.':data.state==='unavailable'?'현재 이용권에는 새 응원 편지가 포함되지 않아요. 기존 편지는 계속 볼 수 있어요.':data.state==='skipped'?'예약 시각에 대화가 없어 오늘 편지는 쉬어가요.':data.state==='discarded'?'오늘 편지는 이미 처리했어요.':`오늘의 응원 예약은 ${String(data.hour).padStart(2,'0')}:00예요.`;
  }catch(exc){button.disabled=true;document.getElementById('daily-inbox-status').textContent=exc.message;}
 }
 function badge(count){for(const element of document.querySelectorAll('.library-notice-count')){element.hidden=count===0;element.textContent=count;element.setAttribute('aria-label',`새 결과 ${count}개`);}}

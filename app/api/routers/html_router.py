@@ -135,3 +135,8 @@ def letters_page(request:Request):
 @router.get('/weekly',response_class=HTMLResponse)
 def weekly_page(request:Request):
     return templates.TemplateResponse('weekly.html',{'request':request,'active_tab':'library'},headers={'Cache-Control':'no-store'})
+
+
+@router.get('/passes',response_class=HTMLResponse)
+def passes_page(request:Request):
+    return templates.TemplateResponse('passes.html',{'request':request,'active_tab':'passes'},headers={'Cache-Control':'no-store'})

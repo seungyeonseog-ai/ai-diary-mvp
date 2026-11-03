@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 from uuid import uuid4
+Path('.local-check').mkdir(exist_ok=True)
 fixture_path=Path('.local-check')/('space-ui-'+str(uuid4())+'.db')
 os.environ['DATABASE_URL']='sqlite:///'+fixture_path.resolve().as_posix()
 import asyncio
@@ -14,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from app.core.connection import Base,engine
 from app.api.routers import html_router,auth_router,writing_router,study_router
+from app.api.routers import access_router
 from app.models.db.user_model import User
 from app.models.db.writing_model import Writing,WritingOperation
 from app.models.db.chat_message_model import ChatMessage
@@ -23,7 +25,7 @@ from app.services import writing_stream,writing_service
 from app.utils.time_utils import get_kst_now
 
 app=FastAPI()
-for router in (html_router.router,auth_router.router,writing_router.router,study_router.router):app.include_router(router)
+for router in (html_router.router,auth_router.router,writing_router.router,study_router.router,access_router.router):app.include_router(router)
 app.mount('/static',StaticFiles(directory='static'),name='static')
 Base.metadata.create_all(engine)
 with Session(engine) as db:

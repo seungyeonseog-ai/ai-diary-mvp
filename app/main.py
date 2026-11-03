@@ -12,6 +12,7 @@ from app.api.routers.writing_router import router as writing_router
 from app.api.routers.library_router import router as library_router
 from app.core.writing_migration import require_writing_schema
 from app.core.access_migration import require_access_schema
+from app.api.routers.access_router import router as access_router
 import asyncio
 from contextlib import suppress
 from app.tasks.session_task_runner import session_checker_all_users_loop
@@ -82,6 +83,7 @@ app.include_router(constellation_router)
 app.include_router(writing_router)
 app.include_router(library_router)
 app.include_router(daily_router)
+app.include_router(access_router)
 
 
 @app.on_event("startup")

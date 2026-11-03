@@ -5,7 +5,7 @@ export const owner = () => localStorage.getItem('user_id');
 export function node(tag,className,text){const el=document.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;}
 export function closeButton(dialog,label='닫기'){const button=node('button','dialog-close','×');button.type='button';button.setAttribute('aria-label',label);button.addEventListener('click',()=>dialog.close());return button;}
 export function id(){return crypto.randomUUID();}
-export function safeNext(value,fallback='/space'){try{const url=new URL(value,location.origin);return url.origin===location.origin&&/^\/(space|library|diary\/[1-9]\d*)$/.test(url.pathname)?url.pathname+url.search:fallback;}catch{return fallback;}}
+export function safeNext(value,fallback='/space'){try{const url=new URL(value,location.origin);return url.origin===location.origin&&/^\/(space|library|passes|diary\/[1-9]\d*)$/.test(url.pathname)?url.pathname+url.search:fallback;}catch{return fallback;}}
 export function clearIdentity(){
  const uid=owner();for(const key of ['access_token','nickname','user_id'])localStorage.removeItem(key);
  for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key.startsWith(`space:${uid}:`))sessionStorage.removeItem(key);}

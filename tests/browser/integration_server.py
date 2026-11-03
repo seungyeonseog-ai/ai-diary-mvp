@@ -9,10 +9,12 @@ if os.environ.get('SPACE_LIVE_AI'):
 
 from datetime import datetime
 from tests.browser import space_server as space
-from app.api.routers import daily_router, library_router, writing_router
+from app.api.routers import daily_router, library_router, writing_router, access_router
+from app.services import auth_service
 from app.services import daily_service, weekly_cycle_service, study_state_service, library_service, writing_service
 from app.core.daily_migration import migrate_daily_schema
 from app.core.weekly_migration import migrate_weekly_schema
+from app.core.access_migration import migrate_access_schema
 from app.models.db.daily_model import DailyJob, LetterDelivery, ResultNotice
 from app.models.db.weekly_cycle_model import AnalysisJob
 from app.models.db.writing_model import SummaryRange
@@ -23,8 +25,14 @@ from fastapi import HTTPException
 app, engine = space.app, space.engine
 clock = {'now': datetime(2026, 11, 3, 12)}
 for module in (daily_router, writing_router, daily_service, weekly_cycle_service,
-               study_state_service, library_service, writing_service):
+               study_state_service, library_service, writing_service, auth_service, access_router):
     module.get_kst_now = lambda: clock['now']
+# 고정 시각보다 가입이 미래인 비현실적인 합성 자료를 만들지 않는다.
+with Session(engine) as db:
+    from app.models.db.user_model import User
+    for user in db.query(User):user.registered_at=clock['now']
+    db.commit()
+migrate_access_schema(engine)
 migrate_daily_schema(engine, clock['now'])
 migrate_weekly_schema(engine, clock['now'])
 app.include_router(daily_router.router)

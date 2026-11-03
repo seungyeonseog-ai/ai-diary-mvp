@@ -1,9 +1,15 @@
 """기능별 이용 권한을 반환한다. 시각은 기존 DB와 같은 naive KST다."""
 from datetime import datetime, timedelta
-from app.models.db.access_model import AccountAccess
+from app.models.db.access_model import AccountAccess, AccountPlanChoice
 from app.models.db.user_model import User
 
-TRIAL_FEATURES = ("dialogue", "encouragement", "weekly")
+PLANS = {
+    "free": (),
+    "dialogue_encouragement": ("dialogue", "encouragement"),
+    "dialogue_weekly": ("dialogue", "weekly"),
+    "encouragement_weekly": ("encouragement", "weekly"),
+    "super": ("dialogue", "encouragement", "weekly"),
+}
 
 
 def trial_period(user):
@@ -29,7 +35,7 @@ def access(db, uid, now):
     row = db.get(AccountAccess, uid)
     start, end = (row.trial_started_at, row.trial_expires_at) if row else trial_period(user)
     trial = start is not None and start <= now < end
-    features = TRIAL_FEATURES if trial else ()
+    features = PLANS["super"] if trial else ()
     return {"plan": "free", "features": list(features), "trial_state": "active" if trial else "expired" if end else "registration_unknown",
             "trial_started_at": start.isoformat() if start else None,
             "trial_expires_at": end.isoformat() if end else None}
@@ -37,3 +43,24 @@ def access(db, uid, now):
 
 def permits(db, uid, feature, now):
     return feature in access(db, uid, now)["features"]
+
+
+def selected_plan(db, uid):
+    row = db.query(AccountPlanChoice).filter_by(user_id=uid).order_by(AccountPlanChoice.id.desc()).first()
+    return {"selected_plan":row.plan if row else None,
+            "selected_at":row.chosen_at.isoformat() if row else None}
+
+
+def choose_plan(db, uid, request_id, plan, now):
+    """선택 의향만 저장한다. 체험·기능 권한·결제 상태는 변경하지 않는다."""
+    if plan not in PLANS:
+        raise ValueError("Unknown plan")
+    row = db.query(AccountPlanChoice).filter_by(user_id=uid,request_id=request_id).first()
+    if row:
+        if row.plan != plan:
+            raise ValueError("Request ID conflict")
+    else:
+        row = AccountPlanChoice(user_id=uid,request_id=request_id,plan=plan,chosen_at=now)
+        db.add(row)
+        db.flush()
+    return {"selected_plan":row.plan,"selected_at":row.chosen_at.isoformat(),"grants_access":False}

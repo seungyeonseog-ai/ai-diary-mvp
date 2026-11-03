@@ -1,0 +1,8 @@
+.passes-workspace{margin-left:100px;padding:44px 6vw 70px;max-width:1450px;color:var(--cream,#f0e7d1)}
+.passes-heading{margin:40px 0 30px}.passes-heading h1{font-size:42px;margin:10px 0}.eyebrow{color:#d7b969;font-size:13px;letter-spacing:.1em}
+.passes-heading>p:last-child,.pass-notes p{color:#b9beb6;line-height:1.9}
+.access-summary{border:1px solid #bda66a66;border-radius:20px;background:#ffffff05;padding:24px 30px;margin:24px 0 44px}.access-summary h2{font-size:21px;margin:0 0 14px}.access-summary p{line-height:1.8}
+.plan-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px;margin-top:24px}
+.plan-card{display:flex;flex-direction:column;gap:14px;padding:26px 22px;border:1px solid #ffffff20;border-radius:18px;background:#ffffff04}.plan-card h3{font-size:19px;line-height:1.5;margin:0;min-height:58px}.plan-card p{line-height:1.9;color:#b9beb6;white-space:pre-line;flex:1}.plan-card .selected{color:#f1cd75}.pass-notes{margin-top:40px;padding-top:20px;border-top:1px solid #ffffff20}.pass-notes h2{font-size:20px}
+.pass-choice-status{min-height:24px;line-height:1.7}.access-banner{margin:0 0 20px;padding:14px 18px;border:1px solid #ffffff25;border-radius:12px;line-height:1.8}.access-banner a{color:#efd18b}
+@media(max-width:800px){.passes-workspace{margin-left:80px;padding:28px 24px}.plan-cards{grid-template-columns:1fr 1fr}}

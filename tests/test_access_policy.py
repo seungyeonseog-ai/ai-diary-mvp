@@ -14,8 +14,8 @@ from sqlalchemy.orm import Session
 from app.core.connection import Base
 from app.core.access_migration import migrate_access_schema, require_access_schema
 from app.models.db.user_model import User
-from app.models.db.access_model import AccountAccess
-from app.services.access_service import access, ensure_account, permits
+from app.models.db.access_model import AccountAccess, AccountPlanChoice
+from app.services.access_service import access, ensure_account, permits, choose_plan
 from tools.migrate_access import migrate, digest_existing
 
 
@@ -25,7 +25,7 @@ class AccessTests(unittest.TestCase):
         self.path = Path(self.temp.name)/"test.db"
         self.engine = create_engine("sqlite:///"+self.path.as_posix())
         # 권한 기반만 필요하므로 관련 테이블만 만든다.
-        for table in (User.__table__, AccountAccess.__table__):
+        for table in (User.__table__, AccountAccess.__table__, AccountPlanChoice.__table__):
             table.create(self.engine)
         self.start = datetime(2026,11,3,23,59,59)
         with Session(self.engine) as db:
@@ -45,6 +45,38 @@ class AccessTests(unittest.TestCase):
             self.assertFalse(permits(db,1,"weekly",datetime(2026,11,10)))
             self.assertFalse(permits(db,1,"dialogue",self.start-timedelta(seconds=1)))
 
+    def test_choice_api_authenticated_account_isolated_idempotent_and_never_grants_access(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch
+        from app.api.routers import access_router as api
+        from app.core.connection import get_db
+        from app.api.dependencies.auth_dependencies import get_current_user
+        app=FastAPI();app.include_router(api.router)
+        def database():
+            with Session(self.engine) as db:yield db
+        app.dependency_overrides[get_db]=database
+        with TestClient(app) as client, patch.object(api,"get_kst_now",return_value=datetime(2026,11,11)):
+            self.assertEqual(client.get('/account/access').status_code,401)
+            app.dependency_overrides[get_current_user]=lambda:User(id=1)
+            before=client.get('/account/access').json()
+            payload={"request_id":"choice","plan":"super"}
+            for _ in range(2):
+                response=client.post('/account/plan-choice',json=payload)
+                self.assertEqual(response.status_code,200,response.text)
+                self.assertFalse(response.json()['grants_access'])
+            after=client.get('/account/access').json()
+            self.assertEqual(after['selected_plan'],'super')
+            for field in ('features','plan','trial_expires_at'):
+                self.assertEqual(before[field],after[field])
+            self.assertEqual(after['features'],[])
+            self.assertEqual(client.post('/account/plan-choice',json={**payload,'plan':'free'}).status_code,409)
+            self.assertEqual(client.post('/account/plan-choice',json={**payload,'user_id':2}).status_code,422)
+            self.assertEqual(client.post('/account/plan-choice',json={**payload,'plan':'bogus'}).status_code,422)
+            app.dependency_overrides[get_current_user]=lambda:User(id=2)
+            self.assertIsNone(client.get('/account/access').json()['selected_plan'])
+        with Session(self.engine) as db:self.assertEqual(db.query(AccountPlanChoice).count(),1)
+
     def test_legacy_start_and_unknown_registration_are_preserved(self):
         with Session(self.engine) as db:
             user = db.get(User,1)
@@ -56,6 +88,16 @@ class AccessTests(unittest.TestCase):
             user.registered_at = None
             self.assertEqual(access(db,2,self.start)["trial_state"],"registration_unknown")
             self.assertEqual(access(db,2,self.start)["features"],[])
+
+    def test_all_combinations_only_save_preference_before_and_after_trial(self):
+        with Session(self.engine) as db:
+            before=access(db,1,self.start)
+            for index,plan in enumerate(('free','dialogue_encouragement','dialogue_weekly','encouragement_weekly','super')):
+                choose_plan(db,1,str(index),plan,self.start)
+                self.assertEqual(access(db,1,self.start),before)
+                self.assertEqual(access(db,1,datetime(2026,11,10))['features'],[])
+            self.assertEqual(db.query(AccountPlanChoice).count(),5)
+            self.assertEqual(access(db,1,datetime(2026,11,10))['plan'],'free')
 
     def test_legacy_paid_fields_cannot_extend_trial_or_grant_features(self):
         with Session(self.engine) as db:

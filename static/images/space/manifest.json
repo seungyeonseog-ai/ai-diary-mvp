@@ -46,5 +46,13 @@
   "envelope-v2.png": {
     "source": "imagegen 2026-11-03, user card reference: front-facing cream envelope with coral heart",
     "sha256": "2431e93884994eada9daaa3929f715f75eeb1a4e20cca1f39dd7273ce596c2fb"
+  },
+  "quota-base-lamp-states-v1.png": {
+    "source": "built-in image_gen; user-approved quota asset 2026-11-04",
+    "sha256": "b33d8d616ca2fc68c5a3b844d74193f431e38658fff65837dfb9be6cd3a1995a"
+  },
+  "quota-extra-bulb-states-v1.png": {
+    "source": "built-in image_gen; user-approved quota asset 2026-11-04",
+    "sha256": "a2d874b7d3e9cfaa4bf2b1e956fe1b62be597403268ccb6d368d5a9de3dfc4d9"
   }
 }

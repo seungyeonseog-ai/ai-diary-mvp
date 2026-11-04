@@ -1,3 +1,11 @@
+// 예전 캐시의 일반 script에서도 파싱되도록 동적 import를 사용한다.
+async function dialog(...args){
+ if(!document.getElementById('ui-dialog'))for(const name of ['space-ui','detail-ui','ui-polish']){
+  const link=document.createElement('link');link.rel='stylesheet';link.href=`/static/css/${name}.css?v=20261104-ui2`;document.head.append(link);
+ }
+ return (await import('./space/ui.js?v=20261104-ui2')).dialog(...args);
+}
+let submittingRegistration=false;
 // register.html에서 분리된 JS 코드
 // 아래는 register.html의 <script>...</script> 내부 전체 JS 코드입니다.
 
@@ -53,7 +61,7 @@ function validateForm() {
   const isPasswordMatch = checkPasswordMatch();
 
   const submitBtn = document.getElementById('submit-btn');
-  if (isPasswordValid && isPasswordMatch) {
+  if (!submittingRegistration && isPasswordValid && isPasswordMatch) {
     submitBtn.disabled = false;
     submitBtn.className = 'submit-btn active';
   } else {
@@ -82,6 +90,7 @@ if (document.getElementById('password_confirm')) {
 if (document.getElementById("registerForm")) {
   document.getElementById("registerForm").addEventListener("submit", async function(e) {
     e.preventDefault();
+    const submit=document.getElementById('submit-btn');if(submittingRegistration||submit.disabled)return;submittingRegistration=true;submit.disabled=true;
 
     const formData = new FormData(this);
     const data = {
@@ -105,17 +114,20 @@ if (document.getElementById("registerForm")) {
       if (!response.ok) {
         if (Array.isArray(result.detail)) {
           const errorMessages = result.detail.map(e => e.msg).join("\n");
-          alert(errorMessages);
+          await dialog('회원가입을 완료하지 못했어요',errorMessages);
         } else {
-          alert(result.detail || result.message || "회원가입 실패");
+          await dialog('회원가입을 완료하지 못했어요',typeof result.detail==='string'?result.detail:result.message||'입력한 내용을 확인해 주세요.');
         }
       } else {
-        alert(result.message || "회원가입 성공!");
+        await dialog('회원가입이 완료됐어요',result.message || '로그인하고 나의 공간을 시작해 보세요.');
         window.location.href = "/login";
       }
 
     } catch (error) {
-      alert("서버와의 통신에 실패했습니다: " + error.message);
+      await dialog('서버에 연결하지 못했어요','입력한 내용은 그대로 두고 잠시 후 다시 시도해 주세요.');
+    } finally {
+      submittingRegistration=false;
+      validateForm();
     }
   });
 }

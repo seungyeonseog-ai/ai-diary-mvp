@@ -1,4 +1,4 @@
-import {node,closeButton} from './ui.js?v=20261103-7c';
+import {node,closeButton} from './ui.js?v=20261104-ui2';
 let detail=null;
 export function closeDetail(){if(detail){detail.close();detail.remove();detail=null;}}
 export function showDetail(day,valid=()=>true){

@@ -1,4 +1,4 @@
-import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261103-7c';
+import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261104-ui2';
 import {replyReadingDelay,PHOTO_LIMIT} from './writing_policy.js?v=20261103-8a';
 let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null,epoch=0,activeController=null,photoURLs=[],failedPhotos=[];
 let diaryPromptTimer=null,photoLimitNotice=false,leaving=false;
@@ -57,12 +57,17 @@ function updateActions(){
  const unresolved=ops().some(o=>['failed','pending'].includes(o.state));
  for(const name of ['message-input','send-message','lamp-submit','make-diary','edit-diary','add-photo','discard-diary','cancel-edit'])$(name).disabled=busy;
  if(state&&!detailId){$('send-message').disabled=busy||remaining===0||unresolved;$('message-input').disabled=busy||remaining===0||unresolved;
- $('lamp-submit').disabled=busy||remaining===0||unresolved||(!state.messages.length&&!$('message-input').value.trim());
+ $('lamp-submit').disabled=busy||unresolved||(remaining>0&&!state.messages.length&&!$('message-input').value.trim());
  $('make-diary').hidden=!state.diary&&(!success()||unsubmitted().length>0||unresolved);
  $('make-diary').textContent=state.diary?'오늘 일기 보기':'이 이야기로 일기 만들기';
  $('lamp-submit').dataset.available=String(remaining>0&&!unresolved);
  $('lamp-submit').setAttribute('aria-label',`전등으로 이야기 보내기 · 기본 ${allowance.base_remaining}회 · 추가 ${allowance.extra_remaining}회 남음`);
- $('quota-label').textContent=`기본 ${allowance.base_remaining}회 · 오늘 추가 ${allowance.extra_remaining}회 남음${state.diary?' · 일기는 그대로 보관돼요.':''}`;
+ $('quota-label').textContent=`기본 ${allowance.base_remaining}회 · 오늘 추가 ${allowance.extra_remaining}회 남음`;
+ if($('quota-display')){
+  $('base-quota-text').textContent=`기본 ${allowance.base_remaining}회`;$('extra-quota-text').textContent=`추가 ${allowance.extra_remaining}회`;
+  $('base-quota-icon').dataset.lit=String(allowance.base_remaining>0);
+  for(let index=1;index<=2;index++)$('extra-quota-icon-'+index).dataset.lit=String(index<=allowance.extra_remaining);
+ }
  if($('continue-chat')){$('continue-chat').hidden=remaining===0||unresolved||(!state.diary&&!success());$('continue-chat').disabled=busy;$('continue-chat').textContent=state.diary?'전등이와 더 이야기하기':'더 이야기할래요';}
  if(remaining===0&&!state.diary&&!unresolved)$('reply-status').textContent='오늘의 대화를 마쳤어요. 이 이야기로 일기를 남겨보세요.';
  }
@@ -161,7 +166,7 @@ async function loadDiary(){
  editing=false;$('edit-form').hidden=true;$('diary-title').hidden=false;$('diary-body').hidden=false;
  $('diary-title').textContent=detail.title||'오늘의 기록';$('diary-body').textContent=detail.body;
  $('diary-date').textContent=new Intl.DateTimeFormat('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long',timeZone:'Asia/Seoul'}).format(new Date(detail.date+'T12:00:00+09:00'));
- $('diary-state').textContent=detail.state==='saved'?'저장됨':'초안';$('save-diary').textContent=detail.state==='saved'?'저장됨':'저장';
+ $('diary-state').textContent=detail.state==='saved'?'보관중':'초안';$('save-diary').textContent=detail.state==='saved'?'저장됨':'저장';
  $('save-note').textContent=detail.state==='saved'?'서재에도 보관되었어요.':'저장을 누르면 서재에 보관돼요.';
  if(detail.photos.length<PHOTO_LIMIT)photoLimitNotice=false;renderPhotoErrors();
  show('diary');updateActions();await renderPhotos(detail);if(stored(`edit-${detail.id}`))beginEdit({restore:true});
@@ -221,9 +226,21 @@ async function removePhoto(photoId){if(busy)return;const answer=await confirm('�
 $('composer').addEventListener('submit',submitMessage);
 $('message-input').addEventListener('input',()=>{cancelDiaryPrompt();store('composer',$('message-input').value);resizeInput();updateActions();});
 $('message-input').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();void submitMessage();}});
-$('lamp-submit').addEventListener('click',()=>sendLamp());$('make-diary').addEventListener('click',()=>state?.diary?openCompletedDiary():askDiary());
+async function requestLampReply(){
+ cancelDiaryPrompt();if(busy||!state||!same())return;
+ const remaining=(state.quota?.base_remaining||0)+(state.quota?.extra_remaining||0);
+ if(remaining===0){await dialog('오늘 대화를 다 소진하셨어요','');return;}
+ if(!$('message-input').value.trim()&&!unsubmitted().length){await sendLamp();return;}
+ const writingId=state.id;
+ const answer=await dialog('이야기를 다 남기셨나요?','',[
+  {label:'다 말했어요, 답변받을래요',value:'reply',primary:true},
+  {label:'더 말할래요',value:'more'}]);
+ if(!same()||state?.id!==writingId||busy)return;
+ if(answer==='reply')await sendLamp();else $('message-input').focus();
+}
+$('lamp-submit').addEventListener('click',requestLampReply);$('make-diary').addEventListener('click',()=>state?.diary?openCompletedDiary():askDiary());
 $('edit-diary').addEventListener('click',beginEdit);$('edit-form').addEventListener('submit',applyEdit);$('edit-title').addEventListener('input',rememberEdit);$('edit-body').addEventListener('input',rememberEdit);
-$('cancel-edit').addEventListener('click',async()=>{if(await confirm('수정을 취소할까요?','입력 중인 수정 대신 마지막으로 반영한 내용을 보여드려요.','수정 취소','계속 수정')==='ok'){store(`edit-${state.diary.id}`,null);clearError();await loadDiary();}});
+$('cancel-edit').addEventListener('click',async()=>{if(await confirm('수정을 취소할까요?','','취소','수정하기')==='ok'){store(`edit-${state.diary.id}`,null);clearError();await loadDiary();}});
 $('save-diary').addEventListener('click',saveDiary);$('discard-diary').addEventListener('click',discardDiary);
 $('add-photo').addEventListener('click',()=>$('photo-input').click());$('photo-input').addEventListener('change',event=>{const files=[...event.target.files].map(file=>({file,id:id()}));event.target.value='';void uploadPhotos(files);});
 $('retry-action').addEventListener('click',()=>retry?.());

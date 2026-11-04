@@ -1,21 +1,25 @@
-import {json,node,token,owner,toast,dialog,logout,closeButton} from './ui.js?v=20261103-7c';
+import {json,node,token,owner,toast,dialog,logout,closeButton} from './ui.js?v=20261104-ui2';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 let stopped=false,timer,lastIds=null,snapshot=0,requesting=false,revision=0;
 const panel=node('dialog','ui-dialog daily-panel');panel.setAttribute('aria-label','편지와 알림');document.body.append(panel);
 const title=node('h2'),content=node('div','daily-content'),error=node('p','daily-error'),close=closeButton(panel,'알림 닫기');
 panel.append(title,content,error,close);
 function show(name){revision++;title.textContent=name;content.replaceChildren();error.textContent='';if(!panel.open)panel.showModal();return revision;}
+panel.addEventListener('cancel',event=>{if(panel.dataset.required==='true')event.preventDefault();});
+panel.addEventListener('keydown',event=>{if(panel.dataset.required==='true'&&event.key==='Escape')event.preventDefault();});
+panel.addEventListener('close',()=>{panel.dataset.required='false';panel.setAttribute('closedby','closerequest');close.hidden=false;});
 function fail(exc){if(same())error.textContent=exc.message;}
 async function settings({waitForClose=false}={}){
  const epoch=show('응원 받을 시간');
+ panel.dataset.required='true';panel.setAttribute('closedby','none');close.hidden=true;
  try{const data=await json('/daily/settings');if(!same()||epoch!==revision)return;
-  const label=node('label','','편안하게 응원을 받을 시간을 골라주세요. (한국 시간)'),select=node('select');select.setAttribute('aria-label','응원 예약 시간');
+  const label=node('label','','대화를 시작하면 설정하신 시간대에 응원메세지를 남겨드려요 (한국시간)'),select=node('select');select.setAttribute('aria-label','응원 예약 시간');
   for(let hour=0;hour<24;hour++){const option=node('option','',`${String(hour).padStart(2,'0')}:00`);option.value=hour;select.append(option);}select.value=data.hour;
-  const note=node('p','','오늘 편지를 이미 받았다면 변경한 시간은 내일부터 적용돼요.'),save=node('button','primary','시간 저장');
+  const note=node('p','','※ 오늘 편지를 이미 받았다면 변경한 시간은 내일부터 적용돼요.'),save=node('button','primary','완료');
   save.addEventListener('click',async()=>{save.disabled=true;error.textContent='';try{const result=await json('/daily/settings',{method:'PUT',data:{hour:Number(select.value)}});if(!same())return;toast(`응원 시간 ${String(result.hour).padStart(2,'0')}:00 · ${result.effective_date}부터 적용`);panel.close();await refresh();}catch(exc){fail(exc);}finally{save.disabled=false;}});
   label.append(select);content.append(label,note,save);
   if(waitForClose)await new Promise(resolve=>panel.addEventListener('close',resolve,{once:true}));
- }catch(exc){fail(exc);}
+ }catch(exc){fail(exc);const retry=node('button','primary','다시 불러오기');retry.addEventListener('click',()=>void settings({waitForClose}));content.append(retry);if(waitForClose)await new Promise(resolve=>panel.addEventListener('close',resolve,{once:true}));}
 }
 async function list(view='pending'){
  const epoch=show(view==='archive'?'보관한 편지':'알림');

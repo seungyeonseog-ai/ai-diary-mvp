@@ -1,4 +1,4 @@
-import {$,json,node,token,owner,confirm,expire} from './ui.js?v=20261103-7c';
+import {$,json,node,token,owner,confirm,expire} from './ui.js?v=20261104-ui2';
 const identity=token(),uid=owner(),same=()=>identity===token()&&uid===owner();
 let sequence=0,view='today',lastSignature=null,retry=null,polling=false,acting=false;
 const root=$('letter-content'),status=$('daily-inbox-status'),error=$('letter-page-error');

@@ -1,4 +1,4 @@
-import {$,json,node,token,owner,expire} from './ui.js?v=20261103-7c';
+import {$,json,node,token,owner,expire} from './ui.js?v=20261104-ui2';
 import {chart,closeDetail} from './weekly_chart.js?v=20261103-7c';
 import {weeklyModel} from './weekly_model.js?v=20261103-7c';
 const identity=token(),uid=owner(),same=()=>identity===token()&&uid===owner();let sequence=0,notifyRetry=null,ready=false;

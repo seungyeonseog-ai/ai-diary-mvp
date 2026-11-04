@@ -1,9 +1,10 @@
-import {token,json,node,dialog,logout,clearIdentity} from './ui.js?v=20261103-7c';
+import {token,json,node,dialog,logout,clearIdentity} from './ui.js?v=20261104-ui2';
 let authenticated=false;
 async function header(){if(!token())return;const observedToken=token();try{
  const user=await json('/account/me',{authRedirect:false});authenticated=true;
  const avatar=document.createElementNS('http://www.w3.org/2000/svg','svg');avatar.classList.add('icon');const use=document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#i-user');avatar.append(use);
- const name=node('span','',`${user.nickname}님`),divider=node('span','header-divider'),button=node('button','','로그아웃');button.addEventListener('click',logout);document.getElementById('account-header').replaceChildren(avatar,name,divider,button);
+ const name=node('span','',`${user.nickname}님`),account=node('span','header-account-name'),badge=node('span','pass-badge');badge.id='home-pass-badge';badge.textContent=document.body.dataset.accessLabel||'';badge.hidden=!badge.textContent;account.append(badge,name);
+ const divider=node('span','header-divider'),button=node('button','','로그아웃');button.addEventListener('click',logout);document.getElementById('account-header').replaceChildren(avatar,account,divider,button);
  }catch(error){if(error.status===401&&token()===observedToken)clearIdentity();}}
 document.getElementById('enter-space').addEventListener('click',async()=>{
  if(authenticated){location.assign('/space');return;}

@@ -7,14 +7,18 @@
  {% if diary_id %}<nav class="detail-nav"><a id="diary-back" href="/library">{{icon('arrow')}} 서재로 돌아가기</a></nav>{% endif %}
  <div id="loading-view" class="loading-view"><div class="soft-spinner"></div><p>나의 공간을 열고 있어요.</p></div>
  <section id="chat-view" class="chat-view" hidden aria-label="오늘의 이야기">
-  <header class="chat-heading"><button id="lamp-submit" class="lamp-button" aria-label="전등을 눌러 이야기 보내기"><img src="/static/images/space/lamp-default-v1.png" alt=""></button>
+  <header class="chat-heading"><div id="quota-display" class="quota-display" role="status" aria-label="남은 대화">
+   <span id="quota-label" class="quota-screen-reader"></span>
+   <div class="quota-group"><span id="base-quota-icon" class="quota-icon quota-base" aria-hidden="true"></span><span id="base-quota-text">기본 1회</span></div>
+   <div class="quota-group"><span id="extra-quota-icon-1" class="quota-icon quota-extra" aria-hidden="true"></span><span id="extra-quota-icon-2" class="quota-icon quota-extra" aria-hidden="true"></span><span id="extra-quota-text">추가 2회</span></div>
+  </div><button id="lamp-submit" class="lamp-button" aria-label="전등을 눌러 이야기 보내기"><img src="/static/images/space/lamp-default-v1.png" alt=""></button>
   <h1>오늘 하루는 어땠나요?</h1><p>편하게 이야기하면 일기로 정리해드릴게요.</p></header>
   <div id="messages" class="messages" role="log" aria-label="대화" aria-live="polite"></div>
   <div class="composer-area"><p id="reply-status" class="reply-status" role="status"></p>
    <form id="composer" class="composer"><textarea id="message-input" aria-label="오늘의 이야기 입력" rows="1" placeholder="오늘 있었던 이야기를 들려주세요…" maxlength="50000"></textarea>
    <button id="send-message" class="send-button" type="submit" aria-label="이야기 남기기">{{icon('send')}}</button></form>
    <p class="composer-guide">{{icon('book')}} 이야기를 다 남기면 위의 전등을 눌러주세요.</p>
-   <div class="chat-footer"><span id="quota-label"></span><button id="continue-chat" class="text-button" hidden>더 이야기할래요</button><button id="make-diary" class="text-button" hidden>이 이야기로 일기 만들기 {{icon('arrow')}}</button></div>
+   <div class="chat-footer"><button id="continue-chat" class="text-button" hidden>더 이야기할래요</button><button id="make-diary" class="text-button" hidden>이 이야기로 일기 만들기 {{icon('arrow')}}</button></div>
   </div>
  </section>
  <section id="generating-view" class="generating-view" hidden aria-live="polite"><img src="/static/images/space/lamp-writing-v1.png" alt="전등 캐릭터가 일기를 쓰고 있어요">
@@ -32,4 +36,4 @@
  <section id="error-panel" class="error-panel" hidden role="alert"><p id="error-message"></p><button id="retry-action" class="secondary">다시 시도</button></section>
 </main>
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261103-10d4"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261104-ui2"></script>{% endblock %}

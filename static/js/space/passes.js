@@ -1,4 +1,4 @@
-import {$,json,node,id,token,owner,expire} from './ui.js?v=20261103-7c';
+import {$,json,node,id,token,owner,expire} from './ui.js?v=20261104-ui2';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 let saving=false,pending=null;
 const names={dialogue:'추가 대화 하루 2회',encouragement:'설정 시각의 저녁 응원',weekly:'주간 차트·회고'};

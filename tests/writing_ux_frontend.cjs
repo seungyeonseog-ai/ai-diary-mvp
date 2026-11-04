@@ -49,13 +49,14 @@ class El{
  await m.applyEdit();assert.equal(diary.title,'편집 중 제목');assert.equal(diary.body,'편집 중 본문');assert.equal(diary.state,'saved');assert.equal(diary.photos.length,3);assert(navigation.at(-1).startsWith('/diary/1?'));
  await m.loadDiary();assert.equal($('save-diary').hidden,true);assert.equal($('add-photo').hidden,true);assert.equal($('edit-diary').hidden,false);
  assert.equal(await m.allowLeave(),true);
- await m.restore(true);assert.equal($('workspace').dataset.view,'chat');assert.equal($('diary-view').hidden,true);assert.equal($('make-diary').textContent,'오늘 일기 보기');
+ await m.restore(true);assert.equal($('workspace').dataset.view,'chat');assert.equal($('diary-view').hidden,true);assert.equal($('make-diary').hidden,true);
  await m.restore();assert.equal($('workspace').dataset.view,'chat');
- m.fixture(copy(),{base_remaining:0,extra_remaining:2});$('message-input').value='추가 이야기';m.updateActions();assert.equal($('message-input').disabled,false);assert.equal($('lamp-submit').disabled,false);assert.equal($('make-diary').textContent,'오늘 일기 보기');assert($('quota-label').textContent.includes('추가 2회'));
- m.fixture(copy(),{base_remaining:0,extra_remaining:0});m.updateActions();assert.equal($('message-input').disabled,true);assert.equal($('lamp-submit').disabled,false);assert.equal($('lamp-submit').dataset.available,'false');assert.equal($('make-diary').hidden,false);
+ m.fixture(copy(),{base_remaining:0,extra_remaining:2});$('message-input').value='추가 이야기';m.updateActions();assert.equal($('message-input').disabled,false);assert.equal($('lamp-submit').disabled,false);assert.equal($('make-diary').hidden,true);assert($('quota-label').textContent.includes('추가 2회'));
+ m.fixture(copy(),{base_remaining:0,extra_remaining:0});m.updateActions();assert.equal($('message-input').disabled,true);assert.equal($('lamp-submit').disabled,false);assert.equal($('lamp-submit').dataset.available,'false');assert.equal($('make-diary').hidden,true);
  const beforeExhausted=calls.length;await m.requestLampReply();assert.equal(dialogs.at(-1)[0],'오늘 대화를 다 소진하셨어요');assert.equal(calls.length,beforeExhausted);
  m.fixture(copy(),{base_remaining:0,extra_remaining:1});$('message-input').value='아직 더 쓸 이야기';answer='more';const beforeMore=calls.length;
  await m.requestLampReply();assert.equal($('message-input').value,'아직 더 쓸 이야기');assert.equal(calls.length,beforeMore);assert.equal(dialogs.at(-1)[2][0].label,'다 말했어요, 답변받을래요');assert.equal(dialogs.at(-1)[2][1].label,'더 말할래요');
+ m.fixture({...copy(),state:'draft'});m.updateActions();assert.equal($('make-diary').hidden,false);assert.equal($('make-diary').textContent,'작성 중인 일기 열기');
  assert.equal(policy.namespace.replyReadingDelay('짧음'),5000);assert.equal(policy.namespace.replyReadingDelay('가'.repeat(1000)),15000);
  m.fixture(null);m.scheduleDiaryPrompt('답변');assert.equal(timers.size,1);m.cancelDiaryPrompt();assert.equal(timers.size,0);
  m.fixture(null);$('workspace').dataset.view='chat';$('message-input').value='날짜가 바뀌어도 보존할 입력';

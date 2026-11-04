@@ -18,7 +18,7 @@
    <form id="composer" class="composer"><textarea id="message-input" aria-label="오늘의 이야기 입력" rows="1" placeholder="오늘 있었던 이야기를 들려주세요…" maxlength="50000"></textarea>
    <button id="send-message" class="send-button" type="submit" aria-label="이야기 남기기">{{icon('send')}}</button></form>
    <p class="composer-guide">{{icon('book')}} 이야기를 다 남기면 위의 전등을 눌러주세요.</p>
-   <div class="chat-footer"><button id="continue-chat" class="text-button" hidden>더 이야기할래요</button><button id="make-diary" class="text-button" hidden>이 이야기로 일기 만들기 {{icon('arrow')}}</button></div>
+   <div class="chat-footer"><button id="make-diary" class="text-button" hidden>이 이야기로 일기 만들기 {{icon('arrow')}}</button></div>
   </div>
  </section>
  <section id="generating-view" class="generating-view" hidden aria-live="polite"><img src="/static/images/space/lamp-writing-v1.png" alt="전등 캐릭터가 일기를 쓰고 있어요">
@@ -36,4 +36,4 @@
  <section id="error-panel" class="error-panel" hidden role="alert"><p id="error-message"></p><button id="retry-action" class="secondary">다시 시도</button></section>
 </main>
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261104-ui2"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261104-ui3"></script>{% endblock %}

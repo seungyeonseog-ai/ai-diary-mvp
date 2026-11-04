@@ -64,8 +64,10 @@ function updateActions(){
  $('lamp-submit').setAttribute('aria-label',`전등으로 이야기 보내기 · 기본 ${allowance.base_remaining}회 · 추가 ${allowance.extra_remaining}회 남음`);
  $('quota-label').textContent=`기본 ${allowance.base_remaining}회 · 오늘 추가 ${allowance.extra_remaining}회 남음`;
  if($('quota-display')){
-  $('base-quota-text').textContent=`기본 ${allowance.base_remaining}회`;$('extra-quota-text').textContent=`추가 ${allowance.extra_remaining}회`;
-  $('base-quota-icon').dataset.lit=String(allowance.base_remaining>0);
+  // 이전에 열린 HTML도 같은 조명 상태 갱신을 사용할 수 있다.
+  if($('base-quota-text'))$('base-quota-text').textContent='';
+  if($('extra-quota-text'))$('extra-quota-text').textContent='';
+  if($('base-quota-icon'))$('base-quota-icon').hidden=true;
   for(let index=1;index<=2;index++)$('extra-quota-icon-'+index).dataset.lit=String(index<=allowance.extra_remaining);
  }
  if(remaining===0&&!state.diary&&!unresolved)$('reply-status').textContent='오늘의 대화를 마쳤어요. 이 이야기로 일기를 남겨보세요.';

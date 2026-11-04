@@ -52,7 +52,10 @@ class El{
  await m.restore(true);assert.equal($('workspace').dataset.view,'chat');assert.equal($('diary-view').hidden,true);assert.equal($('make-diary').hidden,true);
  await m.restore();assert.equal($('workspace').dataset.view,'chat');
  m.fixture(copy(),{base_remaining:0,extra_remaining:2});$('message-input').value='추가 이야기';m.updateActions();assert.equal($('message-input').disabled,false);assert.equal($('lamp-submit').disabled,false);assert.equal($('make-diary').hidden,true);assert($('quota-label').textContent.includes('추가 2회'));
+ assert.equal($('extra-quota-icon-1').dataset.lit,'true');assert.equal($('extra-quota-icon-2').dataset.lit,'true');
+ m.fixture(copy(),{base_remaining:0,extra_remaining:1});m.updateActions();assert.equal($('extra-quota-icon-1').dataset.lit,'true');assert.equal($('extra-quota-icon-2').dataset.lit,'false');
  m.fixture(copy(),{base_remaining:0,extra_remaining:0});m.updateActions();assert.equal($('message-input').disabled,true);assert.equal($('lamp-submit').disabled,false);assert.equal($('lamp-submit').dataset.available,'false');assert.equal($('make-diary').hidden,true);
+ for(const id of ['extra-quota-icon-1','extra-quota-icon-2']){assert.equal($(id).dataset.lit,'false');assert.equal($(id).hidden,false);}
  const beforeExhausted=calls.length;await m.requestLampReply();assert.equal(dialogs.at(-1)[0],'오늘 대화를 다 소진하셨어요');assert.equal(calls.length,beforeExhausted);
  m.fixture(copy(),{base_remaining:0,extra_remaining:1});$('message-input').value='아직 더 쓸 이야기';answer='more';const beforeMore=calls.length;
  await m.requestLampReply();assert.equal($('message-input').value,'아직 더 쓸 이야기');assert.equal(calls.length,beforeMore);assert.equal(dialogs.at(-1)[2][0].label,'다 말했어요, 답변받을래요');assert.equal(dialogs.at(-1)[2][1].label,'더 말할래요');

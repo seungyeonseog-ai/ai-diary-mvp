@@ -1,111 +1,149 @@
-version: '3.8'
+# 단일 Linux 호스트용. 로컬 .env/DB를 마운트하지 않는다.
+x-app: &app
+  image: ${MATABUS_IMAGE:-matabus-local:pilot}
+  build:
+    context: .
+    target: runtime
+  user: "10001:10001"
+  environment: &app-env
+    ENVIRONMENT: production
+    DEBUG: "false"
+    LOG_LEVEL: INFO
+    PYTHONUTF8: "1"
+    PYTHONIOENCODING: utf-8
+    TZ: Asia/Seoul
+    OMP_NUM_THREADS: "1"
+    MKL_NUM_THREADS: "1"
+    TOKENIZERS_PARALLELISM: "false"
+    ANONYMIZED_TELEMETRY: "false"
+    DATABASE_URL: sqlite:////data/app.db
+    SPARSE_DB_PATH: /data/sparse_fts.db
+    HUGGINGFACE_CACHE_PATH: /models
+    HF_HOME: /models
+    HF_HUB_OFFLINE: "1"
+    TRANSFORMERS_OFFLINE: "1"
+    CHROMA_HOST: chroma
+    CHROMA_PORT: "8000"
+    CHROMA_ALLOW_RESET: "false"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    CELERY_BROKER_URL: redis://redis:6379/0
+    OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+    SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  volumes:
+    - app_data:/data
+    - model_cache:/models
+  init: true
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
 
 services:
-  # Redis 서버
   redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+    image: redis:7.4-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    command: [redis-server, --appendonly, "yes", --appendfsync, everysec]
+    volumes: [redis_data:/data]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
 
-  # Chroma 벡터 데이터베이스
   chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
-    environment:
-      - CHROMA_SERVER_HOST=0.0.0.0
-      - CHROMA_SERVER_HTTP_PORT=8000
-    restart: unless-stopped
+    <<: *app
+    # 앱과 동일한 requirements의 Chroma 1.0.15 서버를 사용한다.
+    command: [chroma, run, --path, /chroma-data, --host, 0.0.0.0, --port, "8000"]
+    volumes: [chroma_data:/chroma-data]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: [CMD, python, -m, deploy.healthcheck, chroma]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 120s
 
-  # FastAPI 웹 애플리케이션
+  db-init:
+    <<: *app
+    command: [python, -m, deploy.database, init]
+    restart: "no"
+
+  model-init:
+    <<: *app
+    command: [python, -m, deploy.prepare_models]
+    depends_on:
+      db-init: {condition: service_completed_successfully}
+    environment:
+      <<: *app-env
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+    restart: "no"
+
   web:
-    build: .
-    ports:
-      - "8000:8000"
+    <<: *app
+    ports: ["127.0.0.1:${WEB_PORT:-18000}:8000"]
     depends_on:
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_healthy
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - DATABASE_URL=sqlite:////app/data/app.db
-    volumes:
-      - ./static:/app/static
-      - ./templates:/app/templates
-      - app_data:/app/data
-    restart: unless-stopped
+      redis: {condition: service_healthy}
+      chroma: {condition: service_healthy}
+      db-init: {condition: service_completed_successfully}
+      model-init: {condition: service_completed_successfully}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: [CMD, python, -m, deploy.healthcheck, web]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 180s
+
+  celery-worker:
+    <<: *app
+    command: [python, -m, deploy.launch, worker]
+    depends_on:
+      redis: {condition: service_healthy}
+      chroma: {condition: service_healthy}
+      db-init: {condition: service_completed_successfully}
+      model-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -m, deploy.healthcheck, worker]
+      interval: 30s
+      timeout: 15s
+      retries: 6
+      start_period: 180s
+
+  celery-beat:
+    <<: *app
+    command: [python, -m, deploy.beat]
+    volumes:
+      - app_data:/data
+      - model_cache:/models
+      - beat_state:/state
+    depends_on:
+      celery-worker: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -m, deploy.healthcheck, beat]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 6
+      start_period: 180s
 
-  # Celery Worker
-  celery-worker:
-    build: .
-    depends_on:
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_healthy
-    command: python -m celery -A app.services.celery_app:celery worker --loglevel=info --pool=solo
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - DATABASE_URL=sqlite:////app/data/app.db
+  maintenance:
+    <<: *app
+    profiles: [maintenance]
+    user: "0:0"
+    restart: "no"
     volumes:
-      - ./static:/app/static
-      - ./templates:/app/templates
-      - app_data:/app/data
-    restart: unless-stopped
-
-  # Celery Beat (스케줄러)
-  celery-beat:
-    build: .
-    depends_on:
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_healthy
-    command: python -m celery -A app.services.celery_app:celery beat --loglevel=info
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - DATABASE_URL=sqlite:////app/data/app.db
-    volumes:
-      - ./static:/app/static
-      - ./templates:/app/templates
-      - app_data:/app/data
-    restart: unless-stopped
+      - app_data:/snapshot/app
+      - chroma_data:/snapshot/chroma
+      - redis_data:/snapshot/redis
+      - beat_state:/snapshot/beat
+    command: [python, -m, deploy.snapshot, --help]
 
 volumes:
-  redis_data:
-  chroma_data:
   app_data:
-
-networks:
-  default:
-    name: matabus_network
+  model_cache:
+  chroma_data:
+  redis_data:
+  beat_state:

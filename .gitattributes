@@ -1,0 +1,6 @@
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+deploy.bat text eol=crlf
+*.sh text eol=lf
+*.yml text eol=lf
+deploy/*.py text eol=lf

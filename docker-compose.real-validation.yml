@@ -1,0 +1,21 @@
+# 합성 계정만 있는 검증 프로젝트에 한해서 명시적으로 추가한다.
+services:
+  ai-budget:
+    image: matabus-local:validation
+    user: "0:0"
+    command: [python, -m, uvicorn, validation.budget_proxy:app, --host, 0.0.0.0, --port, "8090", --no-access-log]
+    environment:
+      REAL_OPENAI_API_KEY: ${REAL_OPENAI_API_KEY:?Real validation key is required}
+      PYTHONUNBUFFERED: "1"
+    volumes: [ai_budget:/budget]
+    restart: "no"
+  web:
+    environment:
+      DEPLOYMENT_VALIDATION_REAL_AI: "1"
+    depends_on: [ai-budget]
+  celery-worker:
+    environment:
+      DEPLOYMENT_VALIDATION_REAL_AI: "1"
+    depends_on: [ai-budget]
+volumes:
+  ai_budget:

@@ -1,0 +1,28 @@
+# 별도 프로젝트/볼륨에서만 사용하는 합성 AI 검증 target.
+x-validation: &validation
+  build:
+    target: validation
+  environment: &validation-env
+    ENVIRONMENT: validation
+    DEPLOYMENT_VALIDATION: "1"
+    OPENAI_BASE_URL: http://127.0.0.1:9/blocked
+    CELERY_APP_MODULE: validation.runtime:celery
+    ASGI_APP_MODULE: validation.runtime:app
+
+services:
+  chroma:
+    <<: *validation
+  db-init:
+    <<: *validation
+  model-init:
+    <<: *validation
+  web:
+    <<: *validation
+    command: [python, -m, deploy.launch, web]
+  celery-worker:
+    <<: *validation
+    command: [python, -m, deploy.launch, worker]
+  celery-beat:
+    <<: *validation
+  maintenance:
+    <<: *validation

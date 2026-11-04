@@ -1,3 +1,5 @@
+현재 배포 절차는 docs/CONTAINER_DEPLOYMENT.md를 따릅니다. 아래 내용은 복구 전 과거 문서이며 실행하지 않습니다.
+
 # 🐳 Docker 사용법 가이드
 
 ## 📋 목차

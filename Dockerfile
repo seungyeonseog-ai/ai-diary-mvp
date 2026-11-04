@@ -1,115 +1,27 @@
-version: '3.8'
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337 AS runtime
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 PIP_DISABLE_PIP_VERSION_CHECK=1
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 matabus && useradd --uid 10001 --gid 10001 --no-create-home matabus
+COPY requirements.txt ./
+# 기존 Windows 가상환경은 유지하고 이미지에는 CPU wheel을 설치한다.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.7.1+cpu torchvision==0.22.1+cpu torchaudio==2.7.1+cpu \
+      --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements.txt && pip check
+COPY --chown=10001:10001 app ./app
+COPY --chown=10001:10001 static ./static
+COPY --chown=10001:10001 templates ./templates
+COPY --chown=10001:10001 deploy ./deploy
+RUN mkdir -p /data /models /state /chroma-data \
+    && chown -R 10001:10001 /data /models /state /chroma-data
+USER 10001:10001
+EXPOSE 8000
+CMD ["python", "-m", "deploy.launch", "web"]
 
-services:
-  # Redis 서버
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Chroma 벡터 데이터베이스
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/data               # ← persist_path와 일치
-    environment:
-      - CHROMA_SERVER_HOST=0.0.0.0
-      - CHROMA_SERVER_HTTP_PORT=8000
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD" , "true" ]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 40s
-
-
-
-
-  # FastAPI 웹 애플리케이션
-  web:
-    build: .
-    ports:
-      - "8000:8000"
-    depends_on:
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_healthy
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - DATABASE_URL=sqlite:///./app.db
-    volumes:
-      - ./static:/app/static
-      - ./templates:/app/templates
-      - app_data:/app/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Celery Worker
-  celery-worker:
-    build: .
-    depends_on:
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_healthy
-    command: python -m celery -A app.services.celery_app:celery worker --loglevel=info --pool=solo
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - DATABASE_URL=sqlite:///./app.db
-    volumes:
-      - ./static:/app/static
-      - ./templates:/app/templates
-      - app_data:/app/data
-    restart: unless-stopped
-
-  # Celery Beat (스케줄러)
-  celery-beat:
-    build: .
-    depends_on:
-      redis:
-        condition: service_healthy
-      chroma:
-        condition: service_healthy
-    command: python -m celery -A app.services.celery_app:celery beat --loglevel=info
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CHROMA_HOST=chroma
-      - CHROMA_PORT=8000
-      - DATABASE_URL=sqlite:///./app.db
-    volumes:
-      - ./static:/app/static
-      - ./templates:/app/templates
-      - app_data:/app/data
-    restart: unless-stopped
-
-volumes:
-  redis_data:
-  chroma_data:
-  app_data:
-
-networks:
-  default:
-    name: matabus_network
+# 합성 AI는 별도 검증 target에만 포함한다.
+FROM runtime AS validation
+COPY --chown=10001:10001 tests/deployment ./validation

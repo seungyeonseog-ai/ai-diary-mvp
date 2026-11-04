@@ -89,6 +89,7 @@ celerybeat-schedule
 .venv
 .venv-local/
 .local-check/
+backups/
 env/
 venv/
 ENV/

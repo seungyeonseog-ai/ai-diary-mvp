@@ -249,9 +249,32 @@ for(const button of document.querySelectorAll('.coming-soon'))button.addEventLis
 async function allowLeave(){
  cancelDiaryPrompt();
  if(busy){await dialog('처리 중이에요','저장 중인 내용을 보호하기 위해 처리가 끝난 뒤 이동할 수 있어요.');return false;}
- if(editing||state?.diary?.state==='draft')return await confirm('저장하지 않고 나갈까요?',
-  editing?'이대로 나가면 수정한 내용은 일기에 저장되지 않아요.':'이대로 나가면 작성한 일기는 서재에 저장되지 않아요.',
-  '나가기','계속 작성하기')==='ok';
+ if(editing||state?.diary?.state==='draft'){
+  const answer=await dialog('일기를 저장하고 나갈까요?',
+   editing?'저장하기를 누르면 수정한 내용이 저장돼요. 그냥 나가면 수정 내용은 저장되지 않아요.':'저장하기를 누르면 서재에 보관돼요. 그냥 나가면 작성한 일기는 서재에 저장되지 않아요.',
+   [{label:'저장하기',value:'save',primary:true},{label:'나가기',value:'leave'}]);
+  if(answer==='leave')return true;
+  if(answer!=='save'||!same()||busy)return false;
+  const title=editing?$('edit-title').value.trim():null,body=editing?$('edit-body').value.trim():null;
+  if(editing&&(!title||!body)){await dialog('제목과 본문을 입력해 주세요','내용을 채운 뒤 다시 저장해 주세요.');return false;}
+  if(editing&&!editingVersion){await resolveEditConflict();return false;}
+  clearError();setBusy(true);
+  try{
+   if(editing){
+    rememberEdit();
+    const result=await json(`/writing/diaries/${state.diary.id}`,{method:'PATCH',data:{version:editingVersion,title,body}});
+    if(!same())return false;
+    state.diary=result;editingVersion=result.version;
+   }
+   if(state.diary.state==='draft'){
+    const result=await json(`/writing/diaries/${state.diary.id}/save`,{method:'POST',data:{version:state.diary.version}});
+    if(!same())return false;
+    state.diary=result;
+   }
+   store(`edit-${state.diary.id}`,null);editing=false;return true;
+  }catch(failure){if(same()&&failure.status!==401)error(failure.message);return false;}
+  finally{setBusy(false);}
+ }
  return true;
 }
 async function navigateTo(url){if(await allowLeave()){leaving=true;location.assign(url);}}

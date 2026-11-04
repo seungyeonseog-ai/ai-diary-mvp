@@ -8,7 +8,7 @@ class El{
 }
 (async()=>{
  const ids=new Map();const $=id=>{if(!ids.has(id))ids.set(id,new El());return ids.get(id)};
- const storage=new Map(),timers=new Map(),calls=[],navigation=[],dialogs=[],windowEvents=new Map();let seq=0,answer='cancel',identity='a',clockState=null;
+ const storage=new Map(),timers=new Map(),calls=[],navigation=[],dialogs=[],windowEvents=new Map();let seq=0,answer='cancel',identity='a',clockState=null,failSave=false;
  let diary={id:1,title:'원래 제목',body:'원래 본문',date:'2026-11-03',state:'draft',version:1,photos:[]};
  const copy=()=>JSON.parse(JSON.stringify(diary));
  async function json(path,options={}){
@@ -18,7 +18,7 @@ class El{
   if(clockState&&path==='/writing/today')return {...structuredClone(clockState),id:'today',date:'2026-11-04',messages:[]};
   if(path.includes('/photos?')){assert.equal(Number(new URL('http://test'+path).searchParams.get('version')),diary.version);diary.photos.push({id:String(++seq),url:'/photo'});diary.version++;return {id:String(seq),version:diary.version}}
   if(path.includes('/photos/')){assert.equal(options.data.version,diary.version);diary.photos=diary.photos.filter(p=>!path.endsWith('/'+p.id));diary.version++;return {version:diary.version}}
-  if(path.endsWith('/save')){diary.state='saved';diary.version++;return copy()}
+  if(path.endsWith('/save')){if(failSave)throw Error('합성 저장 실패');assert.equal(options.data.version,diary.version);diary.state='saved';diary.version++;return copy()}
   if(options.method==='PATCH'){assert.equal(options.data.version,diary.version);Object.assign(diary,{title:options.data.title,body:options.data.body,version:diary.version+1});return copy()}
   if(path==='/writing/diaries/1')return copy();throw Error(path);
  }
@@ -46,6 +46,11 @@ class El{
  await m.uploadPhotos([{id:'next',file:{name:'다음.png',size:10}}]);assert.equal(diary.photos.length,3);assert.equal($('photo-errors').children.length,0);
  await m.uploadPhotos([{id:'over',file:{name:'초과.png',size:10}}]);assert.equal($('photo-errors').children.length,1);
  answer='cancel';assert.equal(await m.allowLeave(),false);assert(dialogs.at(-1)[1].includes('저장되지'));
+ assert.deepEqual(JSON.parse(JSON.stringify(dialogs.at(-1)[2])),[{label:'저장하기',value:'save',primary:true},{label:'나가기',value:'leave'}]);
+ answer='leave';const beforeLeave=calls.length;assert.equal(await m.allowLeave(),true);assert.equal(calls.length,beforeLeave);
+ answer='save';failSave=true;assert.equal(await m.allowLeave(),false);assert.equal($('error-panel').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');failSave=false;
+ assert.equal(await m.allowLeave(),true);assert.equal(diary.state,'saved');assert.equal(diary.title,'편집 중 제목');assert.equal(navigation.length,0);
+ await m.loadDiary();m.beginEdit({});
  await m.applyEdit();assert.equal(diary.title,'편집 중 제목');assert.equal(diary.body,'편집 중 본문');assert.equal(diary.state,'saved');assert.equal(diary.photos.length,3);assert(navigation.at(-1).startsWith('/diary/1?'));
  await m.loadDiary();assert.equal($('save-diary').hidden,true);assert.equal($('add-photo').hidden,true);assert.equal($('edit-diary').hidden,false);
  assert.equal(await m.allowLeave(),true);

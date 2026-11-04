@@ -35,6 +35,9 @@ class El{
  source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt,requestLampReply};export function fixture(d,q={base_remaining:1,extra_remaining:2}){state={id:"test",diary:d,messages:[],operations:[],quota:q}};export function stateDate(){return state.date}';
  const mod=new vm.SourceTextModule(source,{context});await mod.link(spec=>spec.includes('writing_policy')?policy:stub);await mod.evaluate();const m=mod.namespace;
  m.fixture(copy());await m.loadDiary();m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
+ answer='cancel';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');assert.equal(dialogs.at(-1)[0],'수정을 취소할까요?');assert.equal(dialogs.at(-1)[2],'네');assert.equal(dialogs.at(-1)[3],'아니오');
+ answer='ok';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,true);assert.equal(diary.body,'원래 본문');
+ m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
  const entries=Array.from({length:4},(_,i)=>({id:'p'+i,file:{name:'합성'+i+'.png',size:10}}));
  await m.uploadPhotos(entries);
  assert.equal(diary.photos.length,3);assert.equal(calls.filter(([p])=>p.includes('/photos?')).length,3);
@@ -58,9 +61,11 @@ class El{
  await m.restore();assert.equal($('workspace').dataset.view,'chat');
  m.fixture(copy(),{base_remaining:0,extra_remaining:2});$('message-input').value='추가 이야기';m.updateActions();assert.equal($('message-input').disabled,false);assert.equal($('lamp-submit').disabled,false);assert.equal($('make-diary').hidden,true);assert($('quota-label').textContent.includes('추가 2회'));
  assert.equal($('extra-quota-icon-1').dataset.lit,'true');assert.equal($('extra-quota-icon-2').dataset.lit,'true');
+ assert($('quota-tooltip').textContent.includes('2번'));
  m.fixture(copy(),{base_remaining:0,extra_remaining:1});m.updateActions();assert.equal($('extra-quota-icon-1').dataset.lit,'true');assert.equal($('extra-quota-icon-2').dataset.lit,'false');
  m.fixture(copy(),{base_remaining:0,extra_remaining:0});m.updateActions();assert.equal($('message-input').disabled,true);assert.equal($('lamp-submit').disabled,false);assert.equal($('lamp-submit').dataset.available,'false');assert.equal($('make-diary').hidden,true);
  for(const id of ['extra-quota-icon-1','extra-quota-icon-2']){assert.equal($(id).dataset.lit,'false');assert.equal($(id).hidden,false);}
+ assert($('quota-tooltip').textContent.includes('모두 사용'));
  const beforeExhausted=calls.length;await m.requestLampReply();assert.equal(dialogs.at(-1)[0],'오늘 대화를 다 소진하셨어요');assert.equal(calls.length,beforeExhausted);
  m.fixture(copy(),{base_remaining:0,extra_remaining:1});$('message-input').value='아직 더 쓸 이야기';answer='more';const beforeMore=calls.length;
  await m.requestLampReply();assert.equal($('message-input').value,'아직 더 쓸 이야기');assert.equal(calls.length,beforeMore);assert.equal(dialogs.at(-1)[2][0].label,'다 말했어요, 답변받을래요');assert.equal(dialogs.at(-1)[2][1].label,'더 말할래요');

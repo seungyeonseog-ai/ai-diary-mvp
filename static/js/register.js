@@ -59,15 +59,23 @@ function validateForm() {
   const password = document.getElementById('password').value;
   const isPasswordValid = validatePassword(password);
   const isPasswordMatch = checkPasswordMatch();
+  const fields = ['username','email','nickname'].map(id=>document.getElementById(id));
+  const areFieldsValid = fields.every(field=>field.value.trim()!==''&&field.checkValidity())
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(document.getElementById('email').value);
 
   const submitBtn = document.getElementById('submit-btn');
-  if (!submittingRegistration && isPasswordValid && isPasswordMatch) {
+  if (!submittingRegistration && areFieldsValid && isPasswordValid && isPasswordMatch) {
     submitBtn.disabled = false;
     submitBtn.className = 'submit-btn active';
   } else {
     submitBtn.disabled = true;
     submitBtn.className = 'submit-btn';
   }
+}
+
+for(const name of ['username','email','nickname']){
+  document.getElementById(name)?.addEventListener('input',validateForm);
+  document.getElementById(name)?.addEventListener('change',validateForm);
 }
 
 // 이벤트 리스너 설정

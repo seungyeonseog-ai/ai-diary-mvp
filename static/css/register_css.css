@@ -118,13 +118,13 @@ input:focus {
 }
 
 .submit-btn.active {
-  background-color: #ffc4b2;
+  background-color: #c34f2f;
   color: white;
   cursor: pointer;
 }
 
 .submit-btn.active:hover {
-  background-color: #ffa894;
+  background-color: #aa3f24;
 }
 
 .login-link {
@@ -158,4 +158,4 @@ input:focus {
   .subtitle {
     font-size: 1em;
   }
-} 
+}

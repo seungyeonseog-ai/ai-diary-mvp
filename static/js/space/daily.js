@@ -29,7 +29,7 @@ async function list(view='pending'){
   if(view==='pending')content.append(node('p','soft-copy','오늘 받은편지가 비활성화된 뒤에도 놓친 편지는 여기에서 열 수 있어요.'));
  }catch(exc){fail(exc);}
 }
-async function openLetter(id,origin='today'){panel.close();location.assign(`/letters?letter=${encodeURIComponent(id)}${origin==='archive'?'&view=archive':''}`);}
+async function openLetter(id,origin='today'){panel.close();location.assign(`/letters?letter=${encodeURIComponent(id)}${origin==='archive'?'&view=archive':origin==='pending'?'&source=notification':'&source=today'}`);}
 async function today(){try{const data=await json('/daily/inbox');if(!same())return;if(data.letter)await openLetter(data.letter.id);else toast(data.state==='skipped'?'예약 시각에 대화가 없어 오늘 편지는 쉬어가요.':data.state==='discarded'?'오늘 편지는 이미 처리했어요.':`응원 예약 시간은 ${data.hour}:00예요.`);}catch(exc){toast(exc.message);}}
 async function inboxStatus(){
  const button=document.getElementById('daily-inbox');if(!button||document.getElementById('letters-workspace'))return;

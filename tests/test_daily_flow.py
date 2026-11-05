@@ -1,5 +1,6 @@
 """고정 KST 시각·파일 SQLite·실제 API, 외부 AI는 주입한다."""
 import os
+import json
 os.environ.setdefault('DATABASE_URL','sqlite:///:memory:')
 os.environ.setdefault('OPENAI_API_KEY','test-only-no-network')
 os.environ.setdefault('SECRET_KEY','daily-test-only')
@@ -7,6 +8,7 @@ import tempfile
 import unittest
 from datetime import datetime,timedelta
 from pathlib import Path
+from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock,patch
 from sqlalchemy import create_engine,text
@@ -27,6 +29,38 @@ from app.api.dependencies.auth_dependencies import get_current_user
 
 
 class DailyTests(unittest.TestCase):
+    def test_letter_analytics_mock_transport(self):
+        from app.services import posthog_capture
+
+        key=self.ready()
+        first,second=uuid4(),uuid4()
+        endpoint=f'/daily/letters/{key}'
+        settings={'POSTHOG_ENVIRONMENT':'validation','POSTHOG_ID_KEY':'test-key',
+                  'POSTHOG_HOST':'https://us.i.posthog.com','POSTHOG_PROJECT_TOKEN':'test-token'}
+        with patch.dict(os.environ,settings),patch.object(posthog_capture,'urlopen') as send:
+            self.client.get('/daily/letters?view=archive')
+            self.client.get(endpoint)
+            send.assert_not_called()
+            self.uid=2
+            self.assertEqual(self.client.post(f'{endpoint}/view?visit_id={first}&source=today').status_code,404)
+            send.assert_not_called()
+            self.uid=1
+            self.assertEqual(self.client.post(f'{endpoint}/view?visit_id={first}&source=today').status_code,200)
+            for _ in range(2):
+                self.assertEqual(self.client.post(f'{endpoint}/save').status_code,200)
+            self.assertEqual(self.client.post(f'{endpoint}/view?visit_id={second}&source=archive').status_code,200)
+        events=[json.loads(call.args[0].data) for call in send.call_args_list]
+        self.assertEqual([item['event'] for item in events],
+                         ['letter_detail_viewed','letter_saved','letter_detail_viewed'])
+        initial,saved,revisit=[item['properties'] for item in events]
+        self.assertEqual(initial['letter_id'],saved['letter_id'])
+        self.assertEqual(initial['letter_id'],revisit['letter_id'])
+        self.assertNotEqual(initial['visit_id'],revisit['visit_id'])
+        self.assertNotEqual(initial['visit_id'],str(first))
+        self.assertTrue(initial['first_view'])
+        self.assertFalse(revisit['first_view'])
+        self.assertEqual((initial['source'],revisit['source']),('today','archive'))
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.engine=create_engine('sqlite:///'+str(Path(self.tmp.name)/'daily.db'),connect_args={'check_same_thread':False,'timeout':15})
@@ -213,7 +247,10 @@ class DailyTests(unittest.TestCase):
         self.assertIsNone(self.client.get('/daily/inbox').json()['letter'])
         self.assertEqual(self.client.get('/daily/letters').json()['items'][0]['id'],key)
         self.assertEqual(self.client.get(f'/daily/letters/{key}').status_code,200)
-        self.client.post(f'/daily/letters/{key}/discard')
+        with patch.object(api,'capture_writing_event') as capture:
+            for _ in range(2):
+                self.assertEqual(self.client.post(f'/daily/letters/{key}/discard').status_code,200)
+            capture.assert_called_once_with('letter_discarded',1,key,self.now,letter_id=key)
         self.assertEqual(self.client.get('/daily/letters').json()['items'],[])
         self.assertEqual(self.client.get(f'/daily/letters/{key}').status_code,404)
 

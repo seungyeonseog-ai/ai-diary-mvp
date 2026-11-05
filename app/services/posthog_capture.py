@@ -20,7 +20,7 @@ def capture_first_save(user_id, writing_id, diary_id, saved_at, has_photo, edit_
 
 def capture_writing_event(name, user_id, occurrence, occurred_at, *, writing_id=None,
                           diary_id=None, operation_id=None, navigation_id=None, visit_id=None,
-                          attempt_id=None, **properties):
+                          attempt_id=None, letter_id=None, **properties):
     token = os.getenv("POSTHOG_PROJECT_TOKEN", "").strip()
     host = os.getenv("POSTHOG_HOST", "").strip().rstrip("/")
     key = os.getenv("POSTHOG_ID_KEY", "").strip()
@@ -34,7 +34,7 @@ def capture_writing_event(name, user_id, occurrence, occurred_at, *, writing_id=
     timestamp = occurred_at.replace(tzinfo=KST).isoformat()
     for kind, value in (("writing", writing_id), ("diary", diary_id),
                         ("operation", operation_id), ("navigation", navigation_id), ("visit", visit_id),
-                        ("attempt", attempt_id)):
+                        ("attempt", attempt_id), ("letter", letter_id)):
         if value is not None:
             properties[f"{kind}_id"] = pseudonym(kind, f"{user_id}:{value}")
     payload = {

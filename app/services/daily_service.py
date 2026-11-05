@@ -264,7 +264,7 @@ def letter_payload(db,row):
             'viewed':row.viewed_at is not None}
 
 
-def change_letter(bind,uid,key,action):
+def change_letter(bind,uid,key,action,*,analytics=None,visit_id=None,source=None):
     with transaction(bind,uid) as db:
         row=owned(db,LetterDelivery,key,uid)
         if row.archive_deleted and row.source_date!=get_kst_now().date().isoformat():
@@ -273,14 +273,26 @@ def change_letter(bind,uid,key,action):
         if row.discarded:
             if action=='discard': return {'id':key,'discarded':True}
             raise WritingError(404,'편지를 찾을 수 없습니다.')
-        if action=='view':row.viewed_at=row.viewed_at or get_kst_now()
+        now=get_kst_now()
+        event=None
+        if action=='view':
+            first_view=row.viewed_at is None
+            row.viewed_at=row.viewed_at or now
+            if visit_id is not None and source is not None:
+                event=('letter_detail_viewed', f'{key}:{visit_id}', now,
+                       {'visit_id':visit_id,'source':source,'first_view':first_view})
         elif action=='save':
             if row.archive_deleted:raise WritingError(409,'보관함에서 삭제한 편지예요.')
+            if not row.saved:event=('letter_saved',key,now,{})
             row.saved=True
         elif action=='discard':
             if row.saved:raise WritingError(409,'이미 보관한 편지예요. 보관함에서 삭제해 주세요.')
+            event=('letter_discarded',key,now,{})
             row.discarded=True
         elif action=='archive-delete':
             if not row.saved:raise WritingError(404,'보관한 편지가 없습니다.')
             row.archive_deleted=True
-        return letter_payload(db,row)
+        payload=letter_payload(db,row)
+    if analytics is not None and event is not None:
+        analytics.append(event)
+    return payload

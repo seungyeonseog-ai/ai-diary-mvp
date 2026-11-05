@@ -1,6 +1,7 @@
 """본인 예약·편지·서재 숫자 알림. GET 조회는 생성하지 않는다."""
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+from uuid import UUID
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
 from app.core.connection import get_db
@@ -11,6 +12,7 @@ from app.services import daily_service as service
 from app.services.writing_service import transaction, WritingError, owned
 from app.utils.time_utils import get_kst_now
 from app.services.access_service import permits
+from app.services.posthog_capture import capture_writing_event
 
 router=APIRouter(prefix='/daily',tags=['daily'])
 
@@ -70,9 +72,20 @@ def letter(key:int,db:Session=Depends(get_db),user:User=Depends(get_current_user
 
 
 @router.post('/letters/{key}/{action}')
-def action(key:int,action:str,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+def action(key:int,action:str,background_tasks:BackgroundTasks,db:Session=Depends(get_db),
+           user:User=Depends(get_current_user),visit_id:UUID|None=None,
+           source:Literal['today','notification','archive','direct']|None=None):
     if action not in ('view','save','discard','archive-delete'):raise HTTPException(404)
-    return execute(service.change_letter,db.get_bind(),user.id,key,action)
+    analytics=[]
+    try:
+        result=service.change_letter(db.get_bind(),user.id,key,action,analytics=analytics,
+                                     visit_id=visit_id,source=source)
+    except WritingError as exc:
+        raise HTTPException(exc.status,exc.message) from None
+    for event,occurrence,occurred_at,properties in analytics:
+        background_tasks.add_task(capture_writing_event,event,user.id,occurrence,occurred_at,
+                                  letter_id=key,**properties)
+    return result
 
 
 @router.get('/notices')

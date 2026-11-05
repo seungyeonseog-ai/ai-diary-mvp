@@ -18,6 +18,12 @@ services:
     <<: *validation
   web:
     <<: *validation
+    environment:
+      <<: *validation-env
+      POSTHOG_ENVIRONMENT: validation
+      POSTHOG_HOST: ${POSTHOG_HOST:-}
+      POSTHOG_PROJECT_TOKEN: ${POSTHOG_PROJECT_TOKEN:-}
+      POSTHOG_ID_KEY: ${POSTHOG_ID_KEY:-}
     command: [python, -m, deploy.launch, web]
   celery-worker:
     <<: *validation

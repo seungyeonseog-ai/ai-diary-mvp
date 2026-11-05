@@ -3,7 +3,7 @@ import json
 import asyncio
 import logging
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 from sqlalchemy.orm import Session
 from app.core.connection import get_db
@@ -12,6 +12,7 @@ from app.models.db.user_model import User
 from app.models.db.study_model import DiaryReport
 from app.models.db.writing_model import Writing, DiaryPhoto, WritingOperation
 from app.services import writing_service as service
+from app.services.posthog_capture import capture_first_save
 from app.utils.time_utils import get_kst_now, KST
 from fastapi.responses import StreamingResponse
 from app.services.writing_stream import response_events
@@ -154,8 +155,12 @@ def edit(diary_id: int, data: EditInput, db: Session = Depends(get_db), user: Us
 
 
 @router.post("/diaries/{diary_id}/save")
-def save(diary_id: int, data: VersionInput, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return execute(service.save_diary, db.get_bind(), user.id, diary_id, data.version)
+def save(diary_id: int, data: VersionInput, background_tasks: BackgroundTasks,
+         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    diary, first_save = execute(service.save_diary, db.get_bind(), user.id, diary_id, data.version)
+    if first_save:
+        background_tasks.add_task(capture_first_save, *first_save)
+    return diary
 
 
 @router.delete("/diaries/{diary_id}")

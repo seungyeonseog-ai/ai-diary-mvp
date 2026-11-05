@@ -5,6 +5,7 @@ os.environ["SECRET_KEY"] = "writing-test-only-secret"
 os.environ["OPENAI_API_KEY"] = "test-only-no-network"
 
 import asyncio
+import json
 import struct
 import zlib
 import sqlite3
@@ -27,6 +28,7 @@ from app.models.db.study_model import DiaryReport
 from app.models.db.chat_message_model import ChatMessage
 from app.models.db.writing_model import WritingOperation, SummaryRange
 from app.services import writing_service as service
+from app.services import posthog_capture
 from app.core.writing_migration import migrate_writing_schema, require_writing_schema
 from tools.migrate_writing import original_digest, migrate
 
@@ -110,6 +112,39 @@ class WritingFlowTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/writing/{writing}").json()["diary"]["body"], "수정 본문")
         with Session(self.engine) as db:
             self.assertEqual(db.query(DiaryReport).count(), 1)
+
+    def test_first_save_captures_once_after_commit_and_survives_delivery_failure(self):
+        _, diary_id = self.draft()
+        path = f"/writing/diaries/{diary_id}/save"
+        settings = {"POSTHOG_ENVIRONMENT": "validation", "POSTHOG_ID_KEY": "test-key",
+                    "POSTHOG_HOST": "https://us.i.posthog.com", "POSTHOG_PROJECT_TOKEN": "test-token"}
+
+        def fail_delivery(request, timeout):
+            with Session(self.engine) as db:
+                self.assertEqual(db.get(DiaryReport, diary_id).state, "saved")
+            self.assertEqual(timeout, 3)
+            self.assertEqual(request.full_url, "https://us.i.posthog.com/i/v0/e/")
+            payload = json.loads(request.data)
+            self.assertEqual(payload["event"], "diary_first_saved")
+            self.assertNotIn("합성", json.dumps(payload, ensure_ascii=False))
+            properties = payload["properties"]
+            self.assertEqual(properties["account_kind"], "test")
+            self.assertEqual(properties["usage_context"], "internal_test")
+            self.assertRegex(properties["distinct_id"], r"^[a-f0-9]{64}$")
+            self.assertRegex(properties["diary_id"], r"^[a-f0-9]{64}$")
+            self.assertFalse(properties["has_photo"])
+            raise TimeoutError
+
+        with patch.dict(os.environ, settings), patch.object(posthog_capture, "urlopen", side_effect=fail_delivery) as send:
+            self.owner = 2
+            self.assertEqual(self.client.post(path, json={"version": 1}).status_code, 404)
+            self.owner = 1
+            self.assertEqual(self.client.post(path, json={"version": 99}).status_code, 409)
+            send.assert_not_called()
+            with self.assertLogs(posthog_capture.logger, level="WARNING"):
+                self.assertEqual(self.client.post(path, json={"version": 1}).status_code, 200)
+            self.assertEqual(self.client.post(path, json={"version": 1}).status_code, 200)
+            send.assert_called_once()
 
     def test_discard_a_new_b_diary_only_b_day_source_a_and_b(self):
         first, diary_id = self.draft()

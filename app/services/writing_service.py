@@ -294,7 +294,7 @@ def save_diary(bind, user_id, diary_id, version):
         diary = owned(db, DiaryReport, diary_id, user_id)
         # 저장 응답 유실 후 동일 버전 재시도도 같은 행을 반환한다.
         if diary.state == "saved" and version in (diary.version, diary.version-1):
-            return diary_payload(diary)
+            return diary_payload(diary), None
         if diary.state != "draft" or diary.version != version:
             raise WritingError(409, "일기가 변경되었습니다. 다시 열어 확인해 주세요.")
         start=datetime.combine(diary.timestamp.date(),datetime.min.time())
@@ -304,7 +304,12 @@ def save_diary(bind, user_id, diary_id, version):
             raise WritingError(409,'이미 이 날짜의 일기가 있어요. 서재에서 확인해 주세요.')
         diary.state, diary.updated_at = "saved", get_kst_now()
         diary.version += 1
-        return diary_payload(diary)
+        writing_id = db.query(Writing.id).filter_by(user_id=user_id, diary_id=diary_id).scalar()
+        first_save = None
+        if writing_id and diary.source_type == "ai":
+            has_photo = db.query(DiaryPhoto.id).filter_by(user_id=user_id, diary_id=diary_id).first() is not None
+            first_save = (user_id, writing_id, diary_id, diary.updated_at, has_photo)
+        return diary_payload(diary), first_save
 
 
 def discard_writing(bind, user_id, writing_id):

@@ -4,6 +4,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["SECRET_KEY"] = "isolated-access-test"
 os.environ["OPENAI_API_KEY"] = "test-only-no-network"
 import sqlite3
+import json
 import tempfile
 import unittest
 from contextlib import closing
@@ -50,6 +51,7 @@ class AccessTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         from unittest.mock import patch
         from app.api.routers import access_router as api
+        from app.services import posthog_capture
         from app.core.connection import get_db
         from app.api.dependencies.auth_dependencies import get_current_user
 
@@ -63,16 +65,23 @@ class AccessTests(unittest.TestCase):
         owner = 1
         app.dependency_overrides[get_db] = database
         root = "/account/pilot-survey"
-        experience = {"help_score": 5, "kakao_interest": "unsure"}
+        experience = {"help_score": 5, "kakao_interest": "unsure", "reason": "synthetic private answer"}
         plan = {"request_id": "pilot", "plan": "dialogue_weekly"}
-        with TestClient(app) as client, patch.object(api, "get_kst_now", return_value=self.start) as clock:
+        analytics = {"POSTHOG_ENVIRONMENT": "validation", "POSTHOG_ID_KEY": "test-key",
+                     "POSTHOG_HOST": "https://us.i.posthog.com", "POSTHOG_PROJECT_TOKEN": "test-token"}
+        with (TestClient(app) as client,
+              patch.object(api, "get_kst_now", return_value=self.start) as clock,
+              patch.dict(os.environ, analytics),
+              patch.object(posthog_capture, "urlopen") as transport):
             self.assertEqual(client.get(root).status_code, 401)
             app.dependency_overrides[get_current_user] = lambda: User(id=owner)
             self.assertFalse(client.get(root).json()["available"])
             self.assertEqual(client.post(root + "/experience", json=experience).status_code, 409)
+            transport.assert_not_called()
             clock.return_value = datetime(2026, 11, 10)
             self.assertTrue(client.get(root).json()["available"])
-            self.assertEqual(client.post(root + "/experience", json=experience).status_code, 200)
+            for _ in range(2):
+                self.assertEqual(client.post(root + "/experience", json=experience).status_code, 200)
             self.assertEqual(client.get(root).json(), {
                 "available": True, "experience_submitted": True, "plan_submitted": False,
             })
@@ -86,6 +95,17 @@ class AccessTests(unittest.TestCase):
             owner = 2
             self.assertFalse(client.get(root).json()["experience_submitted"])
             self.assertFalse(client.get(root).json()["plan_submitted"])
+        events = [json.loads(call.args[0].data) for call in transport.call_args_list]
+        self.assertEqual([event["event"] for event in events],
+                         ["pilot_experience_submitted", "pilot_plan_submitted"])
+        experience_props, plan_props = [event["properties"] for event in events]
+        self.assertEqual(experience_props["distinct_id"], plan_props["distinct_id"])
+        self.assertEqual(experience_props["help_score"], 5)
+        self.assertEqual(experience_props["kakao_interest"], "unsure")
+        self.assertNotIn(experience["reason"], json.dumps(events))
+        self.assertEqual(plan_props["plan"], "dialogue_weekly")
+        self.assertCountEqual(plan_props["selected_features"], ["dialogue", "weekly"])
+        self.assertEqual(plan_props["occurred_at"], "2026-11-10T00:00:00+09:00")
         with Session(self.engine) as db:
             self.assertEqual(db.query(AccountPlanChoice).count(), 1)
             self.assertEqual(db.get(PilotSurvey, 1).help_score, 5)

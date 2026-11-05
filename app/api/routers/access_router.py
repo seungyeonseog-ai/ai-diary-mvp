@@ -1,6 +1,6 @@
 """본인 이용 상태 조회. 가격/결제와 분리된 기능 권한 계약."""
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from sqlalchemy.orm import Session
 from app.core.connection import get_db
@@ -9,6 +9,7 @@ from app.models.db.user_model import User
 from app.services.access_service import access, PLANS, selected_plan, choose_plan, ensure_account
 from app.models.db.access_model import AccountAccess, PilotSurvey
 from app.services.writing_service import transaction
+from app.services.posthog_capture import capture_writing_event
 from app.utils.time_utils import get_kst_now
 
 router = APIRouter(prefix="/account", tags=["access"])
@@ -73,30 +74,42 @@ def survey_response(session, user_id, now):
 
 
 @router.post("/pilot-survey/experience")
-def submit_experience(data: ExperienceInput, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def submit_experience(data: ExperienceInput, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = get_kst_now()
     with transaction(db.get_bind(), user.id) as session:
         row = survey_response(session, user.id, now)
-        if row.experience_at is None:
+        first_submission = row.experience_at is None
+        if first_submission:
             row.help_score = data.help_score
             row.reason = data.reason.strip()
             row.kakao_interest = data.kakao_interest
             row.experience_at = now
+    if first_submission:
+        background_tasks.add_task(capture_writing_event, "pilot_experience_submitted",
+                                  user.id, "pilot", now, help_score=data.help_score,
+                                  kakao_interest=data.kakao_interest)
     return {"submitted": True}
 
 
 @router.post("/pilot-survey/plan")
-def submit_pilot_plan(data: ChoiceInput, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def submit_pilot_plan(data: ChoiceInput, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     now = get_kst_now()
     try:
         with transaction(db.get_bind(), user.id) as session:
             row = survey_response(session, user.id, now)
-            if row.plan_at is None:
+            first_submission = row.plan_at is None
+            if first_submission:
                 choose_plan(session, user.id, data.request_id, data.plan, now)
                 row.plan = data.plan
                 row.plan_at = now
     except ValueError:
         raise HTTPException(409, "선택을 저장하지 못했어요. 다시 시도해 주세요.") from None
+    if first_submission:
+        background_tasks.add_task(capture_writing_event, "pilot_plan_submitted",
+                                  user.id, "pilot", now, plan=data.plan,
+                                  selected_features=list(PLANS[data.plan]))
     return {"submitted": True}
 
 

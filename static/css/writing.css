@@ -5,4 +5,14 @@
 .today-diary-link{display:block;margin:12px 0;text-align:right;color:var(--cream)}
 .lamp-button[data-available="true"] img{filter:drop-shadow(0 0 22px #f8cf6a99)}
 .lamp-button[data-available="false"] img{filter:saturate(.35);opacity:.65}
+.lamp-button[data-spent="true"] img{filter:grayscale(1);opacity:.65}
+.lamp-button[data-ready="true"] img{animation:reply-lamp-glow 1.6s ease-in-out infinite}
+@keyframes reply-lamp-glow{
+ 0%,100%{filter:brightness(.98) drop-shadow(0 0 12px #f8cf6a66)}
+ 50%{filter:brightness(1.2) drop-shadow(0 0 30px #ffcd65df)}
+}
+@media(prefers-reduced-motion:reduce){
+ .lamp-button[data-ready="true"] img{animation:none;filter:brightness(1.15) drop-shadow(0 0 22px #ffcd65bb)}
+}
+#quota-display #base-quota-icon:not([hidden]){display:inline-block}
 .chat-footer{flex-wrap:wrap;gap:12px}

@@ -26,6 +26,8 @@ async function load(next=null,push=false){
 }
 function renderShelf(data){
  $('shelf-view').hidden=false;$('books').replaceChildren();
+ let savedBook=null;const savedBookKey=`space:${uid}:saved-book`;
+ try{savedBook=sessionStorage.getItem(savedBookKey);}catch{}
  shelfBooks(data.books).forEach((book,index)=>{
   if(book.state==='empty'){$('books').append(node('div','book empty','기록이 채워질 자리'));return;}
   const element=node(book.state==='saved'?'a':'button','book '+book.state+(book.state==='saved'&&Number(book.id)%5===4?' dark-cover':''));if(book.state==='saved')element.href=diaryURL(book.id,state);
@@ -34,6 +36,11 @@ function renderShelf(data){
   if(book.state==='saved'){copy.append(node('span','book-title',book.title),node('span','book-date',dateLabel(book.date)));element.title=book.title;}
   else{copy.append(lockIcon(),node('span','book-date',dateLabel(book.date)));element.setAttribute('aria-label',`${book.date} 미래의 기록`);element.addEventListener('click',()=>dialog('아직 오지 않은 날이에요','그날의 이야기를 차근차근 채워보세요.'));}
   element.append(image,copy);$('books').append(element);
+  if(book.state==='saved'&&String(book.id)===savedBook){
+   try{sessionStorage.removeItem(savedBookKey);}catch{}
+   element.classList.add('just-saved');
+   setTimeout(()=>element.classList.remove('just-saved'),3000);
+  }
  });
  $('books-older').disabled=!data.has_older;$('books-newer').disabled=!data.has_newer;
  $('shelf-page').textContent=data.total?`${data.page} / ${data.pages}`:'';$('empty-shelf').hidden=data.total!==0;

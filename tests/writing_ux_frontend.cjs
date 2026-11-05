@@ -36,7 +36,7 @@ class El{
  source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt,requestLampReply};export function fixture(d,q={base_remaining:1,extra_remaining:2}){state={id:"test",diary:d,messages:[],operations:[],quota:q}};export function stateDate(){return state.date}';
  const mod=new vm.SourceTextModule(source,{context});await mod.link(spec=>spec.includes('writing_policy')?policy:stub);await mod.evaluate();const m=mod.namespace;
  m.fixture(copy());await m.loadDiary();m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
- answer='cancel';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');assert.equal(dialogs.at(-1)[0],'수정을 취소할까요?');assert.equal(dialogs.at(-1)[2],'네');assert.equal(dialogs.at(-1)[3],'아니오');
+ answer='cancel';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');assert.equal(dialogs.at(-1)[0],'수정을 취소할까요?');assert.equal(dialogs.at(-1)[2].map(x=>x.label).join('/'),'네/아니요');
  answer='ok';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,true);assert.equal(diary.body,'원래 본문');
  m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
  const entries=Array.from({length:4},(_,i)=>({id:'p'+i,file:{name:'합성'+i+'.png',size:10}}));
@@ -53,13 +53,13 @@ class El{
  assert.deepEqual(JSON.parse(JSON.stringify(dialogs.at(-1)[2])),[{label:'저장하기',value:'save',primary:true},{label:'폐기하기',value:'discard'}]);
  assert.equal(dialogs.at(-1)[3].dismissible,false);
  answer='save';failSave=true;assert.equal(await m.allowLeave(),false);assert.equal($('error-panel').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');failSave=false;
- assert.equal(await m.allowLeave(),true);assert.equal(diary.state,'saved');assert.equal(diary.title,'편집 중 제목');assert.equal(navigation.length,0);
+ assert.equal(await m.allowLeave(),false);assert.equal(diary.state,'saved');assert.equal(diary.title,'편집 중 제목');assert.equal(navigation.at(-1),'/library');assert.equal(storage.get('space:a:saved-book'),'1');
  await m.loadDiary();m.beginEdit({});
- await m.applyEdit();assert.equal(diary.title,'편집 중 제목');assert.equal(diary.body,'편집 중 본문');assert.equal(diary.state,'saved');assert.equal(diary.photos.length,3);assert(navigation.at(-1).startsWith('/diary/1?'));
+ await m.applyEdit();assert.equal(diary.title,'편집 중 제목');assert.equal(diary.body,'편집 중 본문');assert.equal(diary.state,'saved');assert.equal(diary.photos.length,3);assert.equal(navigation.at(-1),'/library');
  await m.loadDiary();assert.equal($('save-diary').hidden,true);assert.equal($('add-photo').hidden,true);assert.equal($('edit-diary').hidden,false);
  assert.equal(await m.allowLeave(),true);
  const saved=copy();diary.state='draft';m.fixture(copy());answer='discard';
- assert.equal(await m.allowLeave(),true);assert.equal(diary.state,'discarded');
+ assert.equal(await m.allowLeave(),false);assert.equal(diary.state,'discarded');assert.equal(navigation.at(-1),'/space');
  assert.equal(calls.at(-1)[1].method,'DELETE');diary=saved;m.fixture(copy());
  await m.restore(true);assert.equal($('workspace').dataset.view,'chat');assert.equal($('diary-view').hidden,true);assert.equal($('make-diary').hidden,true);
  await m.restore();assert.equal($('workspace').dataset.view,'chat');

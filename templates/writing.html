@@ -1,6 +1,6 @@
 {% extends "ui_base.html" %}
 {% block body_class %}space-page{% endblock %}
-{% block head %}{% if diary_id %}<link rel="stylesheet" href="/static/css/library.css?v=20261105-ui6">{% endif %}<link rel="stylesheet" href="/static/css/writing.css?v=20261103-10c3">{% endblock %}
+{% block head %}{% if diary_id %}<link rel="stylesheet" href="/static/css/library.css?v=20261105-ui9">{% endif %}<link rel="stylesheet" href="/static/css/writing.css?v=20261105-ui9">{% endblock %}
 {% block content %}
 {% include "space_sidebar.html" %}
 <main id="workspace" class="workspace" aria-busy="true" data-diary-id="{{diary_id|default('')}}">
@@ -9,9 +9,9 @@
  <section id="chat-view" class="chat-view" hidden aria-label="오늘의 이야기">
   <header class="chat-heading"><div id="quota-display" class="quota-display" role="status" aria-label="남은 대화">
    <span id="quota-label" class="quota-screen-reader"></span>
-   <button type="button" class="quota-help" aria-label="추가 대화 안내" aria-describedby="quota-tooltip">추가 대화</button>
-   <div class="quota-group"><span id="extra-quota-icon-1" class="quota-icon quota-extra" aria-hidden="true"></span><span id="extra-quota-icon-2" class="quota-icon quota-extra" aria-hidden="true"></span></div>
-   <span id="quota-tooltip" class="quota-tooltip" role="tooltip">추가 대화의 남은 횟수예요. 답변을 받을 때마다 조명이 하나씩 꺼져요.</span>
+   <button type="button" class="quota-help" aria-describedby="quota-tooltip">전등이 답변 횟수</button>
+   <div class="quota-group"><span id="base-quota-icon" class="quota-icon quota-base" aria-hidden="true"></span><span id="extra-quota-icon-1" class="quota-icon quota-extra" aria-hidden="true"></span><span id="extra-quota-icon-2" class="quota-icon quota-extra" aria-hidden="true"></span></div>
+   <span id="quota-tooltip" class="quota-tooltip" role="tooltip">답변을 받을 때마다 전등이 하나씩 꺼져요.</span>
   </div><button id="lamp-submit" class="lamp-button" aria-label="전등을 눌러 이야기 보내기"><img src="/static/images/space/lamp-default-v1.png" alt=""></button>
   <h1>오늘 하루는 어땠나요?</h1><p>편하게 이야기하면 일기로 정리해드릴게요.</p></header>
   <div id="messages" class="messages" role="log" aria-label="대화" aria-live="polite"></div>
@@ -37,4 +37,4 @@
  <section id="error-panel" class="error-panel" hidden role="alert"><p id="error-message"></p><button id="retry-action" class="secondary">다시 시도</button></section>
 </main>
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261105-ui8"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/writing.js?v=20261105-ui9"></script>{% endblock %}

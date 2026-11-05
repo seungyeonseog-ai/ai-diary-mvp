@@ -4,12 +4,18 @@ let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null
 let diaryPromptTimer=null,photoLimitNotice=false,leaving=false;
 function cancelDiaryPrompt(){clearTimeout(diaryPromptTimer);diaryPromptTimer=null;}
 function scheduleDiaryPrompt(text){
- cancelDiaryPrompt();const writingId=state?.id;
+ if(diaryPromptTimer!==null)return;
+ const writingId=state?.id,reply=latestReply();
+ if(reply&&stored('diary-prompt')===reply.request_id)return;
  diaryPromptTimer=setTimeout(()=>{diaryPromptTimer=null;
-  if(same()&&state?.id===writingId&&!state.diary&&!busy&&!editing&&document.visibilityState==='visible'&&!$('message-input').value.trim()&&unsubmitted().length===0)void askDiary();
+  if(same()&&state?.id===writingId&&(!reply||latestReply()?.request_id===reply.request_id)&&!state.diary&&!busy&&!editing&&document.visibilityState==='visible'&&!$('message-input').value.trim()&&unsubmitted().length===0)void askDiary();
  },replyReadingDelay(text));
 }
 function openCompletedDiary(){cancelDiaryPrompt();leaving=true;location.assign(`/diary/${state.diary.id}?return=${encodeURIComponent(backURL)}`);}
+function goToLibrary(highlight=false){
+ if(highlight)try{sessionStorage.setItem(`space:${uid}:saved-book`,String(state.diary.id));}catch{}
+ leaving=true;location.assign('/library');
+}
 const detailId=$('workspace').dataset.diaryId||null;
 const requestedBack=safeNext(new URLSearchParams(location.search).get('return')||'/library','/library');
 const backURL=requestedBack.split('?')[0]==='/library'?requestedBack:'/library';
@@ -51,25 +57,28 @@ function clearError(){$('error-panel').hidden=true;retry=null;}
 function setBusy(value){busy=value;$('workspace').setAttribute('aria-busy',String(value));updateActions();}
 function ops(){return state?.operations||[];}
 function unsubmitted(){const submitted=new Set(ops().filter(o=>o.kind==='lamp').flatMap(o=>o.source_ids||[]));return(state?.messages||[]).filter(m=>m.role==='user'&&!submitted.has(m.id));}
-function success(){return ops().some(op=>op.kind==='lamp'&&op.state==='succeeded');}
+function latestReply(){return ops().findLast(op=>op.kind==='lamp'&&op.state==='succeeded');}
+function success(){return Boolean(latestReply());}
 function updateActions(){
  const allowance=state?.quota,remaining=(allowance?.base_remaining||0)+(allowance?.extra_remaining||0);
  const unresolved=ops().some(o=>['failed','pending'].includes(o.state));
  for(const name of ['message-input','send-message','lamp-submit','make-diary','edit-diary','add-photo','discard-diary','cancel-edit'])$(name).disabled=busy;
  if(state&&!detailId){$('send-message').disabled=busy||remaining===0||unresolved;$('message-input').disabled=busy||remaining===0||unresolved;
  $('lamp-submit').disabled=busy||unresolved||(remaining>0&&!state.messages.length&&!$('message-input').value.trim());
- $('make-diary').hidden=state.diary?.state==='saved'||(!state.diary&&(!success()||unsubmitted().length>0||unresolved));
+ $('make-diary').hidden=state.diary?.state==='saved'||(!state.diary&&(!success()||unsubmitted().length>0||unresolved||stored('diary-prompt')!==latestReply()?.request_id));
  $('make-diary').textContent=state.diary?'작성 중인 일기 열기':'이 이야기로 일기 만들기';
  $('lamp-submit').dataset.available=String(remaining>0&&!unresolved);
+ $('lamp-submit').dataset.spent=String(remaining===0);
+ $('lamp-submit').dataset.ready=String(!busy&&!unresolved&&remaining>0&&unsubmitted().length>0);
  $('lamp-submit').setAttribute('aria-label',`전등으로 이야기 보내기 · 기본 ${allowance.base_remaining}회 · 추가 ${allowance.extra_remaining}회 남음`);
  $('quota-label').textContent=`기본 ${allowance.base_remaining}회 · 오늘 추가 ${allowance.extra_remaining}회 남음`;
  if($('quota-display')){
   // 이전에 열린 HTML도 같은 조명 상태 갱신을 사용할 수 있다.
   if($('base-quota-text'))$('base-quota-text').textContent='';
   if($('extra-quota-text'))$('extra-quota-text').textContent='';
-  if($('base-quota-icon'))$('base-quota-icon').hidden=true;
-  for(let index=1;index<=2;index++)$('extra-quota-icon-'+index).dataset.lit=String(index<=allowance.extra_remaining);
-  if($('quota-tooltip'))$('quota-tooltip').textContent=allowance.extra_remaining>0?`오늘 추가 대화를 ${allowance.extra_remaining}번 더 나눌 수 있어요. 답변을 받을 때마다 조명이 하나씩 꺼져요.`:'오늘의 추가 대화를 모두 사용했어요. 꺼진 조명은 이미 사용한 추가 대화를 뜻해요.';
+  if($('base-quota-icon'))$('base-quota-icon').dataset.lit=String(allowance.base_remaining>0);
+  for(let index=1;index<=2;index++){const icon=$('extra-quota-icon-'+index);icon.hidden=allowance.features?!allowance.features.includes('dialogue'):false;icon.dataset.lit=String(index<=allowance.extra_remaining);}
+  if($('quota-tooltip'))$('quota-tooltip').textContent=remaining>0?`오늘 답변을 ${remaining}번 더 받을 수 있어요. 답변을 받을 때마다 전등이 하나씩 꺼져요.`:'오늘 받을 수 있는 답변을 모두 사용했어요.';
  }
  if(remaining===0&&!state.diary&&!unresolved)$('reply-status').textContent='오늘의 대화를 마쳤어요. 이 이야기로 일기를 남겨보세요.';
  }
@@ -110,7 +119,10 @@ async function restore(home=false){
   const pending=unfinished.state==='pending'&&Date.parse(unfinished.retry_after+'+09:00')>Date.parse(state.server_now);
   if(pending){if(unfinished.kind==='diary')show('generating');else $('reply-status').textContent='이야기를 정리하고 있어요…';setBusy(true);poll=setTimeout(async()=>{poll=null;try{await fetchState();setBusy(false);await restore();}catch(failure){setBusy(false);error(failure.message,refresh,'상태 다시 확인');}},2000);}
  else error(unfinished.kind==='diary'?'일기를 완성하지 못했어요. 이야기는 보관되어 있어요.':'답변을 완성하지 못했어요. 이야기는 보관되어 있어요.',()=>unfinished.kind==='diary'?generateDiary(unfinished.request_id):sendLamp(unfinished.request_id),'다시 시도',unfinished.kind==='lamp'?'reply':'');
- }else if(success()&&unsubmitted().length===0){$('reply-status').textContent=state.diary?'오늘 나눈 이야기예요.':'이 이야기로 일기를 남길 수 있어요.';}
+ }else if(success()&&unsubmitted().length===0){
+  $('reply-status').textContent=state.diary?'오늘 나눈 이야기예요.':'이 이야기로 일기를 남길 수 있어요.';
+  if(!state.diary&&!$('message-input').value.trim())scheduleDiaryPrompt(state.messages.filter(m=>m.role!=='user').slice(-3).map(m=>m.message).join(' '));
+ }
  updateActions();
  const scrollToLatest=()=>{if(same()&&$('workspace').dataset.view==='chat')$('messages').scrollTop=$('messages').scrollHeight;};
  scrollToLatest();window.requestAnimationFrame?.(scrollToLatest);
@@ -138,6 +150,8 @@ async function submitMessage(event){event?.preventDefault();if(busy||!state)retu
 async function askDiary(){
  cancelDiaryPrompt();
  if(busy||!same())return;
+ const reply=latestReply();if(reply)store('diary-prompt',reply.request_id);
+ updateActions();
  const answer=await confirm('이 이야기로 일기를 만들까요?','오늘 나눈 이야기를 당신의 말로 차근차근 정리할게요.','일기 만들기','더 이야기할래요');
  if(answer==='ok')await generateDiary();else $('message-input').focus();
 }
@@ -192,7 +206,7 @@ function beginEdit({restore=false}={}){if(busy&&!restore)return;clearError();edi
 function rememberEdit(){store(`edit-${state.diary.id}`,{title:$('edit-title').value,body:$('edit-body').value,version:editingVersion});}
 async function applyEdit(event){event?.preventDefault();if(busy)return;const title=$('edit-title').value.trim(),body=$('edit-body').value.trim();if(!title||!body){await dialog('제목과 본문을 입력해 주세요','당신의 이야기가 담길 수 있도록 내용을 남겨주세요.');return;}
  if(!editingVersion){await resolveEditConflict();return;}rememberEdit();clearError();setBusy(true);
- try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'PATCH',data:{version:editingVersion,title,body}});if(!same())return;store(`edit-${state.diary.id}`,null);await loadDiary();if(result.state==='draft'){setBusy(false);await saveDiary();}else openCompletedDiary();}
+ try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'PATCH',data:{version:editingVersion,title,body}});if(!same())return;store(`edit-${state.diary.id}`,null);await loadDiary();if(result.state==='draft'){setBusy(false);await saveDiary();}else goToLibrary();}
  catch(failure){if(failure.status!==401)error(failure.message,failure.status===409?resolveEditConflict:applyEdit,failure.status===409?'최신 내용 확인':'수정 저장 다시 시도');}
  finally{setBusy(false);}
 }
@@ -202,9 +216,9 @@ async function resolveEditConflict(){
  const answer=await confirm('일기가 다른 곳에서 바뀌었어요','최신 내용을 열면 현재 입력한 수정 대신 저장된 내용을 보여드려요.','최신 내용 열기','수정 계속하기');
  if(answer==='ok'){store(`edit-${state.diary.id}`,null);clearError();await loadDiary();}else{state.diary.version=fresh.version;editingVersion=fresh.version;rememberEdit();error('수정 내용을 유지했어요. 저장하면 최신 일기에 이 내용을 반영해요.',applyEdit,'이 수정 내용으로 저장');}
 }
-async function saveDiary(){if(busy||editing)return;clearError();setBusy(true);try{await json(`/writing/diaries/${state.diary.id}/save`,{method:'POST',data:{version:state.diary.version}});if(!same())return;openCompletedDiary();}catch(failure){if(failure.status!==401)error(failure.message,saveDiary,'저장 다시 시도');}finally{setBusy(false);}}
+async function saveDiary(){if(busy||editing)return;clearError();setBusy(true);try{state.diary=await json(`/writing/diaries/${state.diary.id}/save`,{method:'POST',data:{version:state.diary.version}});if(!same())return;goToLibrary(true);}catch(failure){if(failure.status!==401)error(failure.message,saveDiary,'저장 다시 시도');}finally{setBusy(false);}}
 async function discardDiary(){if(busy)return;let latest;try{latest=await json(`/writing/diaries/${state.diary.id}`);}catch(failure){error(failure.message,discardDiary);return;}const today=latest.date===latest.server_date;const answer=await confirm('이 일기를 폐기할까요?',today?'폐기한 일기는 서재에서 사라져요. 오늘은 새 이야기로 다시 작성할 수 있어요.':'폐기한 일기는 서재에서 사라져요. 과거 날짜의 일기는 다시 작성할 수 없어요.','폐기하기','계속 간직하기');if(answer!=='ok')return;clearError();setBusy(true);
- try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;clearLocal();failedPhotos=[];$('photo-errors').replaceChildren();revokePhotos();if(detailId||!result.can_rewrite_today){editing=false;setBusy(false);if(result.can_rewrite_today)sessionStorage.setItem(`space:${uid}:discard-notice`,'1');location.assign(result.can_rewrite_today?'/space':backURL);return;}state=null;$('message-input').value='';await boot();await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}
+ try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;clearLocal();if(result.can_rewrite_today)try{sessionStorage.setItem(`space:${uid}:discard-notice`,'1');}catch{}leaving=true;location.assign('/space');}
  catch(failure){if(failure.status!==401)error(failure.message,discardDiary,'폐기 다시 시도');}finally{setBusy(false);}}
 
 function renderPhotoErrors(){
@@ -238,7 +252,7 @@ async function requestLampReply(){
  if(remaining===0){await dialog('오늘 대화를 다 소진하셨어요','');return;}
  if(!$('message-input').value.trim()&&!unsubmitted().length){await sendLamp();return;}
  const writingId=state.id;
- const answer=await dialog('이야기를 다 남기셨나요?','',[
+ const answer=await dialog('이야기를 다 남기셨나요?',`답변을 받으시면 추가로 답변받을 수 있는 횟수가 ${remaining-1}번 남아요.`,[
   {label:'다 말했어요, 답변받을래요',value:'reply',primary:true},
   {label:'더 말할래요',value:'more'}]);
  if(!same()||state?.id!==writingId||busy)return;
@@ -246,7 +260,8 @@ async function requestLampReply(){
 }
 $('lamp-submit').addEventListener('click',requestLampReply);$('make-diary').addEventListener('click',()=>state?.diary?openCompletedDiary():askDiary());
 $('edit-diary').addEventListener('click',beginEdit);$('edit-form').addEventListener('submit',applyEdit);$('edit-title').addEventListener('input',rememberEdit);$('edit-body').addEventListener('input',rememberEdit);
-$('cancel-edit').addEventListener('click',async()=>{if(await confirm('수정을 취소할까요?','','네','아니오')==='ok'){store(`edit-${state.diary.id}`,null);clearError();await loadDiary();}});
+function confirmCancelEdit(){return dialog('수정을 취소할까요?','',[{label:'네',value:'ok',primary:true},{label:'아니요',value:'cancel'}]);}
+$('cancel-edit').addEventListener('click',async()=>{if(await confirmCancelEdit()==='ok'){store(`edit-${state.diary.id}`,null);clearError();await loadDiary();}});
 $('save-diary').addEventListener('click',saveDiary);$('discard-diary').addEventListener('click',discardDiary);
 $('add-photo').addEventListener('click',()=>$('photo-input').click());$('photo-input').addEventListener('change',event=>{const files=[...event.target.files].map(file=>({file,id:id()}));event.target.value='';void uploadPhotos(files);});
 $('retry-action').addEventListener('click',()=>retry?.());
@@ -256,16 +271,18 @@ async function allowLeave(){
  if(busy){await dialog('처리 중이에요','저장 중인 내용을 보호하기 위해 처리가 끝난 뒤 이동할 수 있어요.');return false;}
  if(editing||state?.diary?.state==='draft'){
   const draft=state.diary.state==='draft';
-  const answer=await dialog(draft?'이 일기를 저장하시겠어요?':'수정한 내용을 저장하시겠어요?',
-   draft?'폐기하면 이 초안과 이번 작성의 대화가 화면에서 사라져요.':'수정을 버려도 기존에 저장한 일기는 그대로 남아요.',
-   [{label:'저장하기',value:'save',primary:true},{label:draft?'폐기하기':'수정 버리기',value:'discard'}],{dismissible:false});
+  if(!draft){
+   if(await confirmCancelEdit()!=='ok'||!same())return false;
+   store(`edit-${state.diary.id}`,null);await loadDiary();return true;
+  }
+  const answer=await dialog('이 일기를 저장하시겠어요?','폐기하면 이 초안과 이번 작성의 대화가 화면에서 사라져요.',
+   [{label:'저장하기',value:'save',primary:true},{label:'폐기하기',value:'discard'}],{dismissible:false});
   if(answer==='discard'&&same()&&!busy){
-   if(!draft){store(`edit-${state.diary.id}`,null);editing=false;return true;}
    clearError();setBusy(true);
    try{
     await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});
     if(!same())return false;
-    clearLocal();editing=false;state.diary.state='discarded';return true;
+    clearLocal();editing=false;state.diary.state='discarded';leaving=true;location.assign('/space');return false;
    }catch(failure){if(same()&&failure.status!==401)error(failure.message);return false;}
    finally{setBusy(false);}
   }
@@ -286,7 +303,7 @@ async function allowLeave(){
     if(!same())return false;
     state.diary=result;
    }
-   store(`edit-${state.diary.id}`,null);editing=false;return true;
+   store(`edit-${state.diary.id}`,null);editing=false;goToLibrary(true);return false;
   }catch(failure){if(same()&&failure.status!==401)error(failure.message);return false;}
   finally{setBusy(false);}
  }
@@ -332,5 +349,5 @@ window.addEventListener('daily:clock',async()=>{
   if(count!==state.messages.length)await restore();else updateActions();
  }catch{/* 기존 입력은 유지하고 다음 연결에서 다시 조회한다. */}
 });
-document.addEventListener('visibilitychange',()=>{cancelDiaryPrompt();if(document.visibilityState==='visible'&&state&&!busy&&!editing)void refresh();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state&&!busy&&!editing)void refresh();});
 if(!token())void expire();else{void boot();connectNotifications();}

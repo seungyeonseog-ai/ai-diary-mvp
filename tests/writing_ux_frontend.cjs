@@ -33,7 +33,7 @@ class El{
  const stub=new vm.SyntheticModule(Object.keys(exported),function(){for(const[k,v]of Object.entries(exported))this.setExport(k,v)},{context});
  const policy=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_policy.js','utf8'),{context});await policy.link(()=>{});await policy.evaluate();
  let source=fs.readFileSync('static/js/space/writing.js','utf8').replace("if(!token())void expire();else{void boot();connectNotifications();}",'');
- source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt,requestLampReply};export function fixture(d,q={base_remaining:1,extra_remaining:2}){state={id:"test",diary:d,messages:[],operations:[],quota:q}};export function stateDate(){return state.date}';
+ source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt,requestLampReply};export function fixture(d,q={base_remaining:1,extra_remaining:2},operations=[]){state={id:"test",diary:d,messages:[],operations,quota:q}};export function stateDate(){return state.date}';
  const mod=new vm.SourceTextModule(source,{context});await mod.link(spec=>spec.includes('writing_policy')?policy:stub);await mod.evaluate();const m=mod.namespace;
  m.fixture(copy());await m.loadDiary();m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
  answer='cancel';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');assert.equal(dialogs.at(-1)[0],'수정을 취소할까요?');assert.equal(dialogs.at(-1)[2].map(x=>x.label).join('/'),'네/아니요');
@@ -80,6 +80,11 @@ class El{
  m.fixture(copy(),{base_remaining:0,extra_remaining:1});$('message-input').value='아직 더 쓸 이야기';answer='more';const beforeMore=calls.length;
  await m.requestLampReply();assert.equal($('message-input').value,'아직 더 쓸 이야기');assert.equal(calls.length,beforeMore);assert.equal(dialogs.at(-1)[2][0].label,'다 말했어요, 답변받을래요');assert.equal(dialogs.at(-1)[2][1].label,'더 말할래요');
  m.fixture({...copy(),state:'draft'});m.updateActions();assert.equal($('make-diary').hidden,false);assert.equal($('make-diary').textContent,'작성 중인 일기 열기');
+ m.fixture(null,{base_remaining:0,extra_remaining:0,features:[]},[{kind:'lamp',state:'succeeded',request_id:'reply-1'}]);
+ $('message-input').value='';storage.set('space:a:test:diary-prompt','"reply-1"');m.updateActions();
+ assert.equal($('make-diary').hidden,true);assert.equal($('lamp-submit').disabled,false);
+ answer='more';const beforeDiaryPrompt=calls.length;await m.requestLampReply();
+ assert.equal(dialogs.at(-1)[0],'이 이야기로 일기를 만들까요?');assert.equal(calls.length,beforeDiaryPrompt);
  assert.equal(policy.namespace.replyReadingDelay('짧음'),5000);assert.equal(policy.namespace.replyReadingDelay('가'.repeat(1000)),15000);
  m.fixture(null);m.scheduleDiaryPrompt('답변');assert.equal(timers.size,1);m.cancelDiaryPrompt();assert.equal(timers.size,0);
  m.fixture(null);$('workspace').dataset.view='chat';$('message-input').value='날짜가 바뀌어도 보존할 입력';

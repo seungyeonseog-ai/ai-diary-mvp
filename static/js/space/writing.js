@@ -65,8 +65,8 @@ function updateActions(){
  for(const name of ['message-input','send-message','lamp-submit','make-diary','edit-diary','add-photo','discard-diary','cancel-edit'])$(name).disabled=busy;
  if(state&&!detailId){$('send-message').disabled=busy||remaining===0||unresolved;$('message-input').disabled=busy||remaining===0||unresolved;
  $('lamp-submit').disabled=busy||unresolved||(remaining>0&&!state.messages.length&&!$('message-input').value.trim());
- $('make-diary').hidden=state.diary?.state==='saved'||(!state.diary&&(!success()||unsubmitted().length>0||unresolved||stored('diary-prompt')!==latestReply()?.request_id));
- $('make-diary').textContent=state.diary?'작성 중인 일기 열기':'이 이야기로 일기 만들기';
+ $('make-diary').hidden=state.diary?.state!=='draft';
+ $('make-diary').textContent='작성 중인 일기 열기';
  $('lamp-submit').dataset.available=String(remaining>0&&!unresolved);
  $('lamp-submit').dataset.spent=String(remaining===0);
  $('lamp-submit').dataset.ready=String(!busy&&!unresolved&&remaining>0&&unsubmitted().length>0);
@@ -254,6 +254,9 @@ $('message-input').addEventListener('input',()=>{cancelDiaryPrompt();store('comp
 $('message-input').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();void submitMessage();}});
 async function requestLampReply(){
  cancelDiaryPrompt();if(busy||!state||!same())return;
+ if(!state.diary&&success()&&!$('message-input').value.trim()&&!unsubmitted().length){
+  await askDiary();return;
+ }
  const remaining=(state.quota?.base_remaining||0)+(state.quota?.extra_remaining||0);
  if(remaining===0){await dialog('오늘 대화를 다 소진하셨어요','');return;}
  if(!$('message-input').value.trim()&&!unsubmitted().length){await sendLamp();return;}
@@ -264,7 +267,7 @@ async function requestLampReply(){
  if(!same()||state?.id!==writingId||busy)return;
  if(answer==='reply')await sendLamp();else $('message-input').focus();
 }
-$('lamp-submit').addEventListener('click',requestLampReply);$('make-diary').addEventListener('click',()=>state?.diary?openCompletedDiary():askDiary());
+$('lamp-submit').addEventListener('click',requestLampReply);$('make-diary').addEventListener('click',()=>{if(state?.diary?.state==='draft')openCompletedDiary();});
 $('edit-diary').addEventListener('click',beginEdit);$('edit-form').addEventListener('submit',applyEdit);$('edit-title').addEventListener('input',rememberEdit);$('edit-body').addEventListener('input',rememberEdit);
 function confirmCancelEdit(){return dialog('수정을 취소할까요?','',[{label:'네',value:'ok',primary:true},{label:'아니요',value:'cancel'}]);}
 $('cancel-edit').addEventListener('click',async()=>{if(await confirmCancelEdit()==='ok'){store(`edit-${state.diary.id}`,null);clearError();await loadDiary();}});

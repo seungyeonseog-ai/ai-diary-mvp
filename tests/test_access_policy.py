@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.connection import Base
 from app.core.access_migration import migrate_access_schema, require_access_schema
 from app.models.db.user_model import User
-from app.models.db.access_model import AccountAccess, AccountPlanChoice
+from app.models.db.access_model import AccountAccess, AccountPlanChoice, PilotSurvey
 from app.services.access_service import access, ensure_account, permits, choose_plan
 from tools.migrate_access import migrate, digest_existing
 
@@ -25,7 +25,7 @@ class AccessTests(unittest.TestCase):
         self.path = Path(self.temp.name)/"test.db"
         self.engine = create_engine("sqlite:///"+self.path.as_posix())
         # 권한 기반만 필요하므로 관련 테이블만 만든다.
-        for table in (User.__table__, AccountAccess.__table__, AccountPlanChoice.__table__):
+        for table in (User.__table__, AccountAccess.__table__, AccountPlanChoice.__table__, PilotSurvey.__table__):
             table.create(self.engine)
         self.start = datetime(2026,11,3,23,59,59)
         with Session(self.engine) as db:
@@ -44,6 +44,51 @@ class AccessTests(unittest.TestCase):
             self.assertTrue(permits(db,1,"weekly",datetime(2026,11,9,23,59,59)))
             self.assertFalse(permits(db,1,"weekly",datetime(2026,11,10)))
             self.assertFalse(permits(db,1,"dialogue",self.start-timedelta(seconds=1)))
+
+    def test_pilot_survey_after_trial_resumes_per_account_and_reuses_plan_choice(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch
+        from app.api.routers import access_router as api
+        from app.core.connection import get_db
+        from app.api.dependencies.auth_dependencies import get_current_user
+
+        app = FastAPI()
+        app.include_router(api.router)
+
+        def database():
+            with Session(self.engine) as db:
+                yield db
+
+        owner = 1
+        app.dependency_overrides[get_db] = database
+        root = "/account/pilot-survey"
+        experience = {"help_score": 5, "kakao_interest": "unsure"}
+        plan = {"request_id": "pilot", "plan": "dialogue_weekly"}
+        with TestClient(app) as client, patch.object(api, "get_kst_now", return_value=self.start) as clock:
+            self.assertEqual(client.get(root).status_code, 401)
+            app.dependency_overrides[get_current_user] = lambda: User(id=owner)
+            self.assertFalse(client.get(root).json()["available"])
+            self.assertEqual(client.post(root + "/experience", json=experience).status_code, 409)
+            clock.return_value = datetime(2026, 11, 10)
+            self.assertTrue(client.get(root).json()["available"])
+            self.assertEqual(client.post(root + "/experience", json=experience).status_code, 200)
+            self.assertEqual(client.get(root).json(), {
+                "available": True, "experience_submitted": True, "plan_submitted": False,
+            })
+            self.assertEqual(client.post(root + "/plan", json={**plan, "plan": "combo"}).status_code, 422)
+            for _ in range(2):
+                self.assertEqual(client.post(root + "/plan", json=plan).status_code, 200)
+            self.assertTrue(client.get(root).json()["plan_submitted"])
+            access_state = client.get("/account/access").json()
+            self.assertEqual(access_state["selected_plan"], "dialogue_weekly")
+            self.assertEqual(access_state["features"], [])
+            owner = 2
+            self.assertFalse(client.get(root).json()["experience_submitted"])
+            self.assertFalse(client.get(root).json()["plan_submitted"])
+        with Session(self.engine) as db:
+            self.assertEqual(db.query(AccountPlanChoice).count(), 1)
+            self.assertEqual(db.get(PilotSurvey, 1).help_score, 5)
 
     def test_choice_api_authenticated_account_isolated_idempotent_and_never_grants_access(self):
         from fastapi import FastAPI

@@ -22,3 +22,14 @@ class AccountPlanChoice(Base):
     plan = Column(String(30), nullable=False)
     chosen_at = Column(DateTime, nullable=False)
     __table_args__ = (UniqueConstraint("user_id", "request_id"),)
+
+
+class PilotSurvey(Base):
+    __tablename__ = "pilot_surveys"
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    help_score = Column(Integer)
+    reason = Column(String(1000))
+    kakao_interest = Column(String(8))
+    experience_at = Column(DateTime)
+    plan = Column(String(30))
+    plan_at = Column(DateTime)

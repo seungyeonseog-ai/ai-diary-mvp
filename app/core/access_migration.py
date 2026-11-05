@@ -1,7 +1,7 @@
 """추가 테이블만 생성하고 기존 체험 시작을 보존한다. 실행 시각으로 초기화하지 않는다."""
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
-from app.models.db.access_model import AccountAccess, AccountPlanChoice
+from app.models.db.access_model import AccountAccess, AccountPlanChoice, PilotSurvey
 from app.models.db.user_model import User
 from app.services.access_service import ensure_account
 
@@ -16,6 +16,7 @@ def migrate_access_schema(engine):
         if 'onboarding_completed_at' not in columns:
             connection.exec_driver_sql('ALTER TABLE account_access ADD COLUMN onboarding_completed_at DATETIME')
         AccountPlanChoice.__table__.create(connection, checkfirst=True)
+        PilotSurvey.__table__.create(connection, checkfirst=True)
         with Session(bind=connection) as db:
             for user in db.scalars(select(User)):
                 ensure_account(db, user)
@@ -23,7 +24,7 @@ def migrate_access_schema(engine):
 
 
 def require_access_schema(engine):
-    if not {"account_access", "account_plan_choices"} <= set(inspect(engine).get_table_names()):
+    if not {"account_access", "account_plan_choices", "pilot_surveys"} <= set(inspect(engine).get_table_names()):
         raise RuntimeError("이용권 스키마 이행 필요: tools/migrate_access.py를 백업과 함께 실행하세요.")
     columns = {column['name'] for column in inspect(engine).get_columns('account_access')}
     required = {"user_id", "trial_started_at", "trial_expires_at", "plan"}

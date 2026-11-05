@@ -22,9 +22,10 @@
 {% macro icon(name) %}<svg class="icon" aria-hidden="true"><use href="#i-{{name}}"/></svg>{% endmacro %}
 {% block content %}{% endblock %}
 {% include "components/ui_dialog.html" %}
+{% include "components/pilot_survey.html" %}
 <div id="toast" class="toast" role="status" hidden></div>
 <script type="module" src="/static/js/space/daily.js?v=20261105-ui12"></script>
-<link rel="stylesheet" href="/static/css/passes.css?v=20261103-9a">
-<script type="module" src="/static/js/space/access_status.js?v=20261105-ui12"></script>
+<link rel="stylesheet" href="/static/css/passes.css?v=20261105-pilot1">
+<script type="module" src="/static/js/space/access_status.js?v=20261105-pilot1"></script>
 {% block scripts %}{% endblock %}
 </body></html>

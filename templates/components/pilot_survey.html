@@ -1,0 +1,73 @@
+<dialog id="pilot-survey" aria-label="무료 체험 종료 설문">
+  <section id="plans" class="panel" aria-labelledby="plan-title" hidden>
+    <header class="heading">
+      <h1 id="plan-title">이용권 선호 설문</h1>
+      <p>어떤 이용권을 선택하고 싶으세요?</p>
+      <p class="notice">선택은 설문에만 쓰이며 결제되지 않아요.</p>
+    </header>
+    <form id="plan-form">
+      <fieldset class="plans" aria-label="이용권 선택">
+        <label class="plan">
+          <span class="plan-title"><input type="radio" name="plan" value="free" required> 무료 패스 <span class="price">0원</span></span>
+          <span>기본 기록을 계속 이용해요.</span>
+          <ul><li>기본 AI 답변 1회</li><li>일기 작성·수정·사진 첨부·저장</li><li>서재와 기본 기억</li></ul>
+        </label>
+        <label class="plan">
+          <span class="plan-title"><input type="radio" name="plan" value="combo" required> 조합패스 <span class="price">월 3,900원</span></span>
+          <span>기본 기록에 원하는 기능 2개를 더해요.</span>
+          <ul><li>추가 대화</li><li>저녁 응원 메시지</li><li>주간 차트·회고</li></ul>
+        </label>
+        <label class="plan">
+          <span class="plan-title"><input type="radio" name="plan" value="super" required> 슈퍼패스 <span class="price">월 5,900원</span></span>
+          <span>기본 기록과 세 기능을 모두 이용해요.</span>
+          <ul><li>추가 대화</li><li>저녁 응원 메시지</li><li>주간 차트·회고</li></ul>
+        </label>
+      </fieldset>
+      <fieldset id="pilot-combo" class="combo" hidden disabled>
+        <legend>조합패스에 넣을 기능 2개를 골라주세요.</legend>
+        <div class="options">
+          <label class="choice"><input type="checkbox" name="feature" value="dialogue"> 추가 대화</label>
+          <label class="choice"><input type="checkbox" name="feature" value="encouragement"> 저녁 응원 메시지</label>
+          <label class="choice"><input type="checkbox" name="feature" value="weekly"> 주간 차트·회고</label>
+        </div>
+      </fieldset>
+      <div class="actions"><button class="primary" type="submit" disabled>제출하기</button><button class="secondary" type="button" data-close>닫기</button></div>
+      <p class="form-status" role="status"></p>
+    </form>
+  </section>
+  <section id="experience" class="panel experience" aria-labelledby="experience-title" hidden>
+    <header class="heading">
+      <h1 id="experience-title">일기 작성 경험 설문</h1>
+      <p>직접 써보면서 느낀 점을 들려주세요.</p>
+    </header>
+    <form id="experience-form">
+      <fieldset class="question">
+        <legend>1. 대화로 시작한 방식이 일기를 끝내는 데 도움이 됐나요?</legend>
+        <div class="options">
+          <label class="choice"><input type="radio" name="help" value="1" required> 1점</label>
+          <label class="choice"><input type="radio" name="help" value="2"> 2점</label>
+          <label class="choice"><input type="radio" name="help" value="3"> 3점</label>
+          <label class="choice"><input type="radio" name="help" value="4"> 4점</label>
+          <label class="choice"><input type="radio" name="help" value="5"> 5점</label>
+        </div>
+        <p class="hint">1점 전혀 도움 안 됨 · 5점 매우 도움 됨</p>
+      </fieldset>
+      <fieldset class="question">
+        <legend>2. 어떤 점이 도움이 됐거나 어려웠나요? (선택)</legend>
+        <textarea aria-label="도움이 됐거나 어려웠던 점" name="reason" maxlength="1000" placeholder="이유를 한두 문장으로 적어주세요."></textarea>
+      </fieldset>
+      <fieldset class="question">
+        <legend>3. 설정한 시간에 카카오톡으로 응원 메시지 알림을 받는다면, 꾸준히 확인할 의향이 있으신가요?</legend>
+        <div class="options">
+          <label class="choice"><input type="radio" name="kakao" value="yes" required> 있어요</label>
+          <label class="choice"><input type="radio" name="kakao" value="unsure"> 잘 모르겠어요</label>
+          <label class="choice"><input type="radio" name="kakao" value="no"> 없어요</label>
+        </div>
+        <p class="hint">카카오톡 알림이 제공된다고 가정한 질문이에요.</p>
+      </fieldset>
+      <div class="actions"><button class="primary" type="submit" disabled>제출하기</button><button class="secondary" type="button" data-close>닫기</button></div>
+      <p class="form-status" role="status"></p>
+    </form>
+  </section>
+
+</dialog>

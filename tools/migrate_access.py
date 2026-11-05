@@ -13,7 +13,7 @@ from app.core.access_migration import migrate_access_schema
 def digest_existing(connection):
     digest = hashlib.sha256()
     names = [r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-             if r[0] not in ("account_access", "access_changes", "account_plan_choices", "sqlite_sequence")]
+             if r[0] not in ("account_access", "access_changes", "account_plan_choices", "pilot_surveys", "sqlite_sequence")]
     for name in names:
         quoted = '"' + name.replace('"', '""') + '"'
         rows = [json.dumps(list(row), ensure_ascii=False, default=lambda v: {"bytes": bytes(v).hex()})

@@ -1,4 +1,4 @@
-import {json,node,token,owner,dialog} from './ui.js?v=20261104-ui2';
+import {json,token,owner,dialog} from './ui.js?v=20261104-ui2';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 let running=false,welcoming=false,welcomeAttempted=false,stopped=false;
 const pages=['/','/space','/library','/passes','/weekly','/letters'];
@@ -12,17 +12,21 @@ async function welcome(data){
   const preference=await json('/daily/settings');if(same()&&preference.configured)await json('/account/onboarding',{method:'POST'});
  }finally{welcoming=false;}
 }
-async function refresh(){
+async function refresh(visit=false){
  if(running||!same()||stopped)return;running=true;
  try{const data=await json('/account/access');if(!same())return;
   document.getElementById('access-banner')?.remove();
   const accessLabel=data.trial_state==='active'?'슈퍼패스':'무료';
   document.body.dataset.accessLabel=accessLabel;
   for(const id of ['home-pass-badge','sidebar-pass-badge']){const badge=document.getElementById(id);if(badge){badge.textContent=accessLabel;badge.hidden=false;}}
+  if(visit&&data.trial_state==='expired'&&document.getElementById('pilot-survey')){
+   const {showPilotSurvey}=await import('./pilot_survey.js?v=20261105-pilot1');
+   if(same()&&!stopped)await showPilotSurvey(()=>same()&&!stopped);
+  }
   if(['/','/space'].includes(location.pathname)&&!data.onboarding_complete&&data.trial_state==='active'&&!welcomeAttempted){welcomeAttempted=true;void welcome(data);}
  }catch{/* 작성·열람은 이용 상태 안내의 연결 실패와 독립적으로 유지한다. */}
  finally{running=false;}
 }
-if(identity&&(pages.includes(location.pathname)||/^\/diary\/[1-9]\d*$/.test(location.pathname))){void refresh();window.addEventListener('daily:clock',()=>void refresh());}
+if(identity&&(pages.includes(location.pathname)||/^\/diary\/[1-9]\d*$/.test(location.pathname))){void refresh(true);window.addEventListener('daily:clock',()=>void refresh());}
 window.addEventListener('space:identity-cleared',()=>{stopped=true;delete document.body.dataset.accessLabel;document.getElementById('access-banner')?.remove();for(const id of ['home-pass-badge','sidebar-pass-badge']){const badge=document.getElementById(id);if(badge){badge.textContent='';badge.hidden=true;}}});
 window.addEventListener('pagehide',()=>{stopped=true;});

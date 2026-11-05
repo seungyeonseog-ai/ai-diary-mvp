@@ -7,7 +7,7 @@ from app.core.connection import get_db
 from app.api.dependencies.auth_dependencies import get_current_user
 from app.models.db.user_model import User
 from app.services.access_service import access, PLANS, selected_plan, choose_plan, ensure_account
-from app.models.db.access_model import AccountAccess
+from app.models.db.access_model import AccountAccess, PilotSurvey
 from app.services.writing_service import transaction
 from app.utils.time_utils import get_kst_now
 
@@ -40,6 +40,64 @@ def choose(data: ChoiceInput, db: Session = Depends(get_db), user: User = Depend
             return choose_plan(session,user.id,data.request_id,data.plan,get_kst_now())
     except ValueError:
         raise HTTPException(409,"같은 요청 ID에 다른 이용권을 선택했어요. 상태를 다시 확인해 주세요.") from None
+
+
+class ExperienceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    help_score: int = Field(strict=True, ge=1, le=5)
+    reason: str = Field(default="", max_length=1000)
+    kakao_interest: Literal["yes", "unsure", "no"]
+
+
+def survey_available(db, user_id, now):
+    expires_at = access(db, user_id, now)["trial_expires_at"]
+    return bool(expires_at and now.isoformat() >= expires_at)
+
+
+@router.get("/pilot-survey")
+def pilot_survey(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    row = db.get(PilotSurvey, user.id)
+    return {"available": survey_available(db, user.id, get_kst_now()),
+            "experience_submitted": bool(row and row.experience_at),
+            "plan_submitted": bool(row and row.plan_at)}
+
+
+def survey_response(session, user_id, now):
+    if not survey_available(session, user_id, now):
+        raise HTTPException(409, "무료 체험이 끝난 뒤 참여할 수 있어요.")
+    row = session.get(PilotSurvey, user_id)
+    if row is None:
+        row = PilotSurvey(user_id=user_id)
+        session.add(row)
+    return row
+
+
+@router.post("/pilot-survey/experience")
+def submit_experience(data: ExperienceInput, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    now = get_kst_now()
+    with transaction(db.get_bind(), user.id) as session:
+        row = survey_response(session, user.id, now)
+        if row.experience_at is None:
+            row.help_score = data.help_score
+            row.reason = data.reason.strip()
+            row.kakao_interest = data.kakao_interest
+            row.experience_at = now
+    return {"submitted": True}
+
+
+@router.post("/pilot-survey/plan")
+def submit_pilot_plan(data: ChoiceInput, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    now = get_kst_now()
+    try:
+        with transaction(db.get_bind(), user.id) as session:
+            row = survey_response(session, user.id, now)
+            if row.plan_at is None:
+                choose_plan(session, user.id, data.request_id, data.plan, now)
+                row.plan = data.plan
+                row.plan_at = now
+    except ValueError:
+        raise HTTPException(409, "선택을 저장하지 못했어요. 다시 시도해 주세요.") from None
+    return {"submitted": True}
 
 
 @router.post('/onboarding')

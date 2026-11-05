@@ -255,10 +255,20 @@ async function allowLeave(){
  cancelDiaryPrompt();
  if(busy){await dialog('처리 중이에요','저장 중인 내용을 보호하기 위해 처리가 끝난 뒤 이동할 수 있어요.');return false;}
  if(editing||state?.diary?.state==='draft'){
-  const answer=await dialog('일기를 저장하고 나갈까요?',
-   editing?'저장하기를 누르면 수정한 내용이 저장돼요. 그냥 나가면 수정 내용은 저장되지 않아요.':'저장하기를 누르면 서재에 보관돼요. 그냥 나가면 작성한 일기는 서재에 저장되지 않아요.',
-   [{label:'저장하기',value:'save',primary:true},{label:'나가기',value:'leave'}]);
-  if(answer==='leave')return true;
+  const draft=state.diary.state==='draft';
+  const answer=await dialog(draft?'이 일기를 저장하시겠어요?':'수정한 내용을 저장하시겠어요?',
+   draft?'폐기하면 이 초안과 이번 작성의 대화가 화면에서 사라져요.':'수정을 버려도 기존에 저장한 일기는 그대로 남아요.',
+   [{label:'저장하기',value:'save',primary:true},{label:draft?'폐기하기':'수정 버리기',value:'discard'}],{dismissible:false});
+  if(answer==='discard'&&same()&&!busy){
+   if(!draft){store(`edit-${state.diary.id}`,null);editing=false;return true;}
+   clearError();setBusy(true);
+   try{
+    await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});
+    if(!same())return false;
+    clearLocal();editing=false;state.diary.state='discarded';return true;
+   }catch(failure){if(same()&&failure.status!==401)error(failure.message);return false;}
+   finally{setBusy(false);}
+  }
   if(answer!=='save'||!same()||busy)return false;
   const title=editing?$('edit-title').value.trim():null,body=editing?$('edit-body').value.trim():null;
   if(editing&&(!title||!body)){await dialog('제목과 본문을 입력해 주세요','내용을 채운 뒤 다시 저장해 주세요.');return false;}
@@ -286,6 +296,16 @@ async function navigateTo(url){if(await allowLeave()){leaving=true;location.assi
 async function accountMenu(){if(await dialog('나의 계정',`${localStorage.getItem('nickname')||'나'}님\n이야기는 로그인한 계정에만 보관돼요.`,[{label:'홈페이지',value:'home'},{label:'닫기',value:'cancel'},{label:'로그아웃',value:'logout',primary:true}])==='logout'){if(await allowLeave())await logout();}else if($('ui-dialog').returnValue==='home')await navigateTo('/');}
 $('account').addEventListener('click',accountMenu);$('settings').addEventListener('click',accountMenu);
 for(const link of document.querySelectorAll('.sidebar a,#diary-back'))link.addEventListener('click',event=>{event.preventDefault();void navigateTo(link.href);});
+let resolvingSidebarAction=false;
+document.addEventListener('click',async event=>{
+ const button=event.target.closest('.sidebar button,#daily-arrival');
+ if(!button||(!editing&&state?.diary?.state!=='draft'))return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(resolvingSidebarAction)return;
+ resolvingSidebarAction=true;
+ try{if(await allowLeave())button.click();}
+ finally{resolvingSidebarAction=false;}
+},true);
 window.addEventListener('beforeunload',event=>{
  if(leaving)return;
  const dirty=editing&&($('edit-title').value!==state?.diary?.title||$('edit-body').value!==state?.diary?.body);

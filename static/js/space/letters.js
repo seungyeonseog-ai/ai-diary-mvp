@@ -1,6 +1,7 @@
-import {$,json,node,token,owner,confirm,expire} from './ui.js?v=20261104-ui2';
+import {$,json,node,token,owner,dialog,confirm,expire} from './ui.js?v=20261104-ui2';
 const identity=token(),uid=owner(),same=()=>identity===token()&&uid===owner();
 let sequence=0,view='today',lastSignature=null,retry=null,polling=false,acting=false;
+let pendingLetter=null,leaving=false;
 const root=$('letter-content'),status=$('daily-inbox-status'),error=$('letter-page-error');
 function select(next){view=next;$('daily-inbox').textContent=view==='received'?'받은편지':'오늘 받은편지';for(const [id,name]of [['daily-inbox','today'],['daily-archive','archive']]){const selected=name===view||name==='today'&&view==='received';$(id).setAttribute('aria-selected',String(selected));$(id).tabIndex=selected?0:-1;}$('letter-page-panel').setAttribute('aria-labelledby',view!=='archive'?'daily-inbox':'daily-archive');}
 function route(next,key){const params=new URLSearchParams();if(next==='archive')params.set('view','archive');if(key)params.set('letter',key);history.replaceState(null,'','/letters'+(params.size?'?'+params:''));}
@@ -20,6 +21,7 @@ async function renderArchive(){route('archive');const epoch=begin('archive');try
  }catch(exc){if(epoch===sequence)fail(exc,renderArchive);}}
 async function open(id,origin='today'){route(origin,id);const epoch=begin(origin);await renderLetter(id,origin,epoch);}
 async function renderLetter(id,origin,epoch){try{const data=await json(`/daily/letters/${id}`);if(!same()||epoch!==sequence)return;
+ pendingLetter=!data.saved&&!data.archive_deleted?id:null;
  status.textContent='';root.replaceChildren();const article=node('article','letter-paper'),lamp=node('img','letter-corner-lamp');lamp.src='/static/images/space/lamp-default-v1.png';lamp.alt='따뜻하게 빛나는 전등';
  article.append(lamp,node('p','letter-date',data.date),node('div','letter-body',data.body));const actions=node('div','daily-actions');
  if(data.archive_deleted)actions.append(node('p','','보관함에서 삭제한 편지예요.'));
@@ -33,13 +35,36 @@ async function act(id,action,origin,epoch,actions){
  try{
   if(action!=='save'&&await confirm(action==='discard'?'편지를 폐기할까요?':'보관함에서 삭제할까요?',action==='discard'?'폐기한 오늘 편지는 다시 받을 수 없어요.':'보관함에서 이 편지를 삭제합니다.')!=='ok')return;
   if(!same()||epoch!==sequence)return;buttons.forEach(b=>b.disabled=true);
-  await json(`/daily/letters/${id}/${action}`,{method:'POST'});if(!same()||epoch!==sequence)return;window.dispatchEvent(new Event('daily:changed'));if(origin==='archive')await renderArchive();else if(origin==='received'&&action==='save')await open(id,'received');else await renderToday();
+  await json(`/daily/letters/${id}/${action}`,{method:'POST'});if(!same()||epoch!==sequence)return;pendingLetter=null;window.dispatchEvent(new Event('daily:changed'));if(origin==='archive')await renderArchive();else if(origin==='received'&&action==='save')await open(id,'received');else await renderToday();
  }catch(exc){if(epoch===sequence)fail(exc,()=>open(id,origin));}
  finally{acting=false;buttons.forEach(b=>b.disabled=false);}
 }
+async function resolveBeforeLeaving(target){
+ if(acting||leaving)return;
+ const id=pendingLetter;
+ leaving=true;
+ try{
+  const action=await dialog('응원 편지를 보관하시겠어요?','',
+   [{label:'보관함에 저장',value:'save',primary:true},{label:'폐기',value:'discard'}],{dismissible:false});
+  if(!same()||pendingLetter!==id||!['save','discard'].includes(action))return;
+  await json(`/daily/letters/${id}/${action}`,{method:'POST'});
+  if(!same()||pendingLetter!==id)return;
+  pendingLetter=null;window.dispatchEvent(new Event('daily:changed'));target.click();
+ }catch(exc){fail(exc,()=>resolveBeforeLeaving(target));}
+ finally{leaving=false;}
+}
+document.addEventListener('click',event=>{
+ const target=event.target.closest('.sidebar a,.sidebar button,#daily-inbox,#daily-archive,#daily-arrival');
+ if(!target||!pendingLetter||!same())return;
+ event.preventDefault();event.stopImmediatePropagation();
+ void resolveBeforeLeaving(target);
+},true);
+window.addEventListener('beforeunload',event=>{
+ if(pendingLetter&&same()){event.preventDefault();event.returnValue='';}
+});
 $('daily-inbox').addEventListener('click',()=>renderToday());$('daily-archive').addEventListener('click',renderArchive);
 for(const id of ['daily-inbox','daily-archive'])$(id).addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const next=e.key==='Home'?'today':e.key==='End'?'archive':view==='archive'?'today':'archive';(next==='today'?$('daily-inbox'):$('daily-archive')).focus();if(next==='today')void renderToday();else void renderArchive();}});
-async function sync(){if(!same()||view!=='today'||polling)return;polling=true;try{const data=await json('/daily/inbox');if(!same()||view!=='today')return;const signature=JSON.stringify([data.server_date,data.state,data.letter?.id,data.letter?.saved,data.letter?.discarded]);if(lastSignature!==null&&signature!==lastSignature)await renderToday(data);}catch{/* foreground load keeps its explicit retry */}finally{polling=false;}}
+async function sync(){if(!same()||view!=='today'||polling||pendingLetter)return;polling=true;try{const data=await json('/daily/inbox');if(!same()||view!=='today'||pendingLetter)return;const signature=JSON.stringify([data.server_date,data.state,data.letter?.id,data.letter?.saved,data.letter?.discarded]);if(lastSignature!==null&&signature!==lastSignature)await renderToday(data);}catch{/* foreground load keeps its explicit retry */}finally{polling=false;}}
 window.addEventListener('daily:clock',sync);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void sync();});
 window.addEventListener('pagehide',()=>{sequence++;});
 window.addEventListener('space:identity-cleared',()=>{sequence++;root.replaceChildren();status.textContent='';error.replaceChildren();});

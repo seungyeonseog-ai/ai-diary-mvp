@@ -1,5 +1,5 @@
 from app.utils.time_utils import get_kst_now, KST
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.api.dependencies.auth_dependencies import get_current_user
 from app.services.diary_service import DiaryService
@@ -12,6 +12,9 @@ from app.models.db.study_model import DiaryReport, EncouragementReport, WeeklyAn
 from app.core.connection import get_db
 from sqlalchemy.orm import Session
 from datetime import datetime, date
+from typing import Literal
+from uuid import UUID
+from pydantic import BaseModel, ConfigDict, Field
 import json
 import redis
 import logging
@@ -20,6 +23,7 @@ from sqlalchemy import func
 from app.repositories.weekly_analysis_repository import WeeklyAnalysisRepository, SourceResolutionError
 
 from app.services.study_state_service import study_status, today_encouragement, latest_weekly
+from app.services.posthog_capture import capture_writing_event
 
 router = APIRouter(prefix="/study", tags=["study"])
 from app.api.dependencies.writing_dependencies import require_legacy_creation
@@ -318,6 +322,28 @@ async def get_today_encouragement(current_user: User = Depends(get_current_user)
     except Exception as e:
         logger.error("encouragement_read_failed user_id=%s error_type=%s", current_user.id, type(e).__name__)
         raise HTTPException(status_code=500, detail="응원 편지를 불러오지 못했습니다.") from None
+
+
+class WeeklyView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event: Literal["weekly_view"]
+    weekly_id: int = Field(gt=0, strict=True)
+    visit_id: UUID
+    surface: Literal["preview", "flow", "emotion", "keyword"]
+
+
+@router.post("/weekly/analytics/view", status_code=204)
+def record_weekly_view(data: WeeklyView, background_tasks: BackgroundTasks,
+                       user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    exists = db.query(WeeklyAnalysisReport.analysis_id).filter_by(
+        analysis_id=data.weekly_id, user_id=user.id
+    ).first()
+    if exists is None:
+        raise HTTPException(404, "주간 분석을 찾을 수 없습니다.")
+    event = "weekly_preview_viewed" if data.surface == "preview" else "weekly_detail_viewed"
+    occurrence = f"{data.weekly_id}:{data.visit_id}:{data.surface}"
+    background_tasks.add_task(capture_writing_event, event, user.id, occurrence, get_kst_now(),
+                              weekly_id=data.weekly_id, visit_id=data.visit_id, surface=data.surface)
 
 
 @router.get("/weekly/latest")

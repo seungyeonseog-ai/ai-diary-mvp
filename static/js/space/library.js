@@ -1,5 +1,5 @@
 import {$,node,id,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261104-ui2';
-import {recordWritingView} from './writing_analytics.js?v=20261105-h1';
+import {recordWritingView,recordWeeklyView} from './writing_analytics.js?v=20261105-weekly-metrics';
 import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-7c';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 const cover=coverURL;
@@ -113,6 +113,9 @@ function chart(data){
  const line=positions.map(point=>`${point.x},${point.y}`).join(' ');add('polygon',{points:`${positions[0].x},80 ${line} ${positions.at(-1).x},80`,fill:'#e9a777',opacity:'.22'});add('polyline',{points:line,stroke:'#f0844a','stroke-width':2.5,fill:'none'});
  positions.forEach((point,index)=>{add('circle',{cx:point.x,cy:point.y,r:5,fill:'#f28e58',stroke:'#fff7e8','stroke-width':2});const label=add('text',{x:point.x,y:166,'text-anchor':'middle',fill:'#8c6242','font-size':11});label.textContent=points[index].date.slice(5).replace('-','/');});
  $('weekly-preview').replaceChildren(svg);
+ requestAnimationFrame(()=>{
+  if(same()&&svg.isConnected)recordWeeklyView(data.weekly_analysis?.id,libraryVisit,'preview');
+ });
 }
 async function loadCards(){
  const requestSequence=++cardSequence;

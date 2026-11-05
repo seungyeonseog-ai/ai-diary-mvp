@@ -9,6 +9,7 @@ import asyncio
 import json
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -177,6 +178,29 @@ class Bundle3Tests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['weekly_analysis']['id'], own.analysis_id)
         self.assertEqual(len(response.json()['diary_analyses']),7)
+
+    def test_weekly_view_transport_links_tabs_to_one_owned_result(self):
+        from app.services import posthog_capture
+
+        own = self.weekly()
+        other = self.weekly(owner=2)
+        path = '/study/weekly/analytics/view'
+        view = {'event': 'weekly_view', 'weekly_id': own.analysis_id, 'visit_id': str(uuid4())}
+        env = {'POSTHOG_ENVIRONMENT': 'validation', 'POSTHOG_ID_KEY': 'test-key',
+               'POSTHOG_HOST': 'https://us.i.posthog.com', 'POSTHOG_PROJECT_TOKEN': 'test-token'}
+        with patch.dict(os.environ, env), patch.object(posthog_capture, 'urlopen') as transport:
+            self.assertEqual(self.client.post(path, json={**view, 'weekly_id': other.analysis_id,
+                                                         'surface': 'preview'}).status_code, 404)
+            transport.assert_not_called()
+            for surface in ('preview', 'flow', 'emotion', 'keyword', 'flow'):
+                self.assertEqual(self.client.post(path, json={**view, 'surface': surface}).status_code, 204)
+        events = [json.loads(call.args[0].data) for call in transport.call_args_list]
+        self.assertEqual(events[0]['event'], 'weekly_preview_viewed')
+        self.assertTrue(all(event['event'] == 'weekly_detail_viewed' for event in events[1:]))
+        props = [event['properties'] for event in events]
+        self.assertEqual(len({item['weekly_id'] for item in props}), 1)
+        self.assertNotEqual(props[0]['weekly_id'], str(own.analysis_id))
+        self.assertEqual(props[1]['event_id'], props[-1]['event_id'])
 
     def test_unused_legacy_reports_do_not_bypass_cycle(self):
         row = self.weekly()

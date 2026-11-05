@@ -15,6 +15,12 @@ export function recordReplyObservation(writingId, event, fields) {
   recordWritingSignal(`/writing/${writingId}/analytics/reply`, event, fields, fields.attempt_id);
 }
 
+export function recordWeeklyView(weeklyId, visitId, surface) {
+  if (!Number.isInteger(weeklyId) || weeklyId <= 0) return;
+  recordWritingSignal('/study/weekly/analytics/view', 'weekly_view',
+    {weekly_id: weeklyId, visit_id: visitId, surface}, weeklyId, visitId, surface);
+}
+
 function recordWritingSignal(path, event, fields, ...parts) {
   const identity = token();
   if (!identity) return;

@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, Response
 
 MODEL = 'gpt-5.6-luna'
-MAX_CALLS = 30
+MAX_CALLS = 50
 MAX_BODY = 60000
 MAX_OUTPUT = 1800
 DB = Path('/budget/calls.db')

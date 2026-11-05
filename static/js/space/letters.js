@@ -45,7 +45,7 @@ async function resolveBeforeLeaving(target){
  leaving=true;
  try{
   const action=await dialog('응원 편지를 보관하시겠어요?','',
-   [{label:'보관함에 저장',value:'save',primary:true},{label:'폐기',value:'discard'}],{dismissible:false});
+   [{label:'보관함에 저장',value:'save',primary:true},{label:'폐기',value:'discard'}]);
   if(!same()||pendingLetter!==id||!['save','discard'].includes(action))return;
   await json(`/daily/letters/${id}/${action}`,{method:'POST'});
   if(!same()||pendingLetter!==id)return;

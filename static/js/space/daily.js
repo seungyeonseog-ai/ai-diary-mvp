@@ -11,15 +11,15 @@ panel.addEventListener('close',()=>{panel.dataset.required='false';panel.setAttr
 function fail(exc){if(same())error.textContent=exc.message;}
 async function settings({waitForClose=false}={}){
  const epoch=show('응원 받을 시간');
- panel.dataset.required='true';panel.setAttribute('closedby','none');close.hidden=true;
- try{const data=await json('/daily/settings');if(!same()||epoch!==revision)return;
+ panel.dataset.required=String(waitForClose);panel.setAttribute('closedby',waitForClose?'none':'closerequest');close.hidden=waitForClose;
+ try{const data=await json('/daily/settings');if(!same()||epoch!==revision||!panel.open)return;
   const label=node('label','','대화를 시작하면 설정하신 시간대에 응원메세지를 남겨드려요 (한국시간)'),select=node('select');select.setAttribute('aria-label','응원 예약 시간');
   for(let hour=0;hour<24;hour++){const option=node('option','',`${String(hour).padStart(2,'0')}:00`);option.value=hour;select.append(option);}select.value=data.hour;
   const note=node('p','','※ 오늘 편지를 이미 받았다면 변경한 시간은 내일부터 적용돼요.'),save=node('button','primary','완료');
   save.addEventListener('click',async()=>{save.disabled=true;error.textContent='';try{const result=await json('/daily/settings',{method:'PUT',data:{hour:Number(select.value)}});if(!same())return;toast(`응원 시간 ${String(result.hour).padStart(2,'0')}:00 · ${result.effective_date}부터 적용`);panel.close();await refresh();}catch(exc){fail(exc);}finally{save.disabled=false;}});
   label.append(select);content.append(label,note,save);
   if(waitForClose)await new Promise(resolve=>panel.addEventListener('close',resolve,{once:true}));
- }catch(exc){fail(exc);const retry=node('button','primary','다시 불러오기');retry.addEventListener('click',()=>void settings({waitForClose}));content.append(retry);if(waitForClose)await new Promise(resolve=>panel.addEventListener('close',resolve,{once:true}));}
+ }catch(exc){if(!same()||epoch!==revision||!panel.open)return;fail(exc);const retry=node('button','primary','다시 불러오기');retry.addEventListener('click',()=>void settings({waitForClose}));content.append(retry);if(waitForClose)await new Promise(resolve=>panel.addEventListener('close',resolve,{once:true}));}
 }
 async function list(view='pending'){
  const epoch=show(view==='archive'?'보관한 편지':'알림');

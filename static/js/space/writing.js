@@ -285,7 +285,7 @@ async function allowLeave(){
    store(`edit-${state.diary.id}`,null);await loadDiary();return true;
   }
   const answer=await dialog('이 일기를 저장하시겠어요?','폐기하면 이 초안과 이번 작성의 대화가 화면에서 사라져요.',
-   [{label:'저장하기',value:'save',primary:true},{label:'폐기하기',value:'discard'}],{dismissible:false});
+   [{label:'저장하기',value:'save',primary:true},{label:'폐기하기',value:'discard'}]);
   if(answer==='discard'&&same()&&!busy){
    clearError();setBusy(true);
    try{

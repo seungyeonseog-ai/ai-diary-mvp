@@ -51,7 +51,7 @@ class El{
  await m.uploadPhotos([{id:'over',file:{name:'초과.png',size:10}}]);assert.equal($('photo-errors').children.length,1);
  answer='cancel';assert.equal(await m.allowLeave(),false);
  assert.deepEqual(JSON.parse(JSON.stringify(dialogs.at(-1)[2])),[{label:'저장하기',value:'save',primary:true},{label:'폐기하기',value:'discard'}]);
- assert.equal(dialogs.at(-1)[3].dismissible,false);
+ assert.notEqual(dialogs.at(-1)[3]?.dismissible,false);
  answer='save';failSave=true;assert.equal(await m.allowLeave(),false);assert.equal($('error-panel').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');failSave=false;
  assert.equal(await m.allowLeave(),false);assert.equal(diary.state,'saved');assert.equal(diary.title,'편집 중 제목');assert.equal(navigation.at(-1),'/library');assert.equal(storage.get('space:a:saved-book'),'1');
  await m.loadDiary();m.beginEdit({});

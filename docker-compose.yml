@@ -85,6 +85,14 @@ services:
 
   web:
     <<: *app
+    environment:
+      <<: *app-env
+      POSTHOG_ENVIRONMENT: ${POSTHOG_ENVIRONMENT:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-}
+      POSTHOG_PROJECT_TOKEN: ${POSTHOG_PROJECT_TOKEN:-}
+      POSTHOG_ID_KEY: ${POSTHOG_ID_KEY:-}
+      POSTHOG_TEST_USER_IDS: ${POSTHOG_TEST_USER_IDS:-}
+      POSTHOG_PILOT_USER_IDS: ${POSTHOG_PILOT_USER_IDS:-}
     ports: ["127.0.0.1:${WEB_PORT:-18000}:8000"]
     depends_on:
       redis: {condition: service_healthy}

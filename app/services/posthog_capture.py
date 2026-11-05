@@ -25,7 +25,20 @@ def capture_writing_event(name, user_id, occurrence, occurred_at, *, writing_id=
     host = os.getenv("POSTHOG_HOST", "").strip().rstrip("/")
     key = os.getenv("POSTHOG_ID_KEY", "").strip()
     environment = os.getenv("POSTHOG_ENVIRONMENT", "").strip()
-    if not token or host not in HOSTS or not key or environment != "validation":
+    if not token or host not in HOSTS or not key:
+        return
+    account_kind, usage_context = "test", "internal_test"
+    if environment == "pilot":
+        account = str(user_id)
+        test_accounts = os.getenv("POSTHOG_TEST_USER_IDS", "").replace(" ", "").split(",")
+        pilot_accounts = os.getenv("POSTHOG_PILOT_USER_IDS", "").replace(" ", "").split(",")
+        is_test = account in test_accounts
+        is_pilot = account in pilot_accounts
+        if is_test == is_pilot:
+            return
+        if is_pilot:
+            account_kind, usage_context = "pilot", "natural_use"
+    elif environment != "validation":
         return
 
     def pseudonym(kind, value):
@@ -49,8 +62,8 @@ def capture_writing_event(name, user_id, occurrence, occurred_at, *, writing_id=
             "occurred_at": timestamp,
             "activity_date_kst": occurred_at.date().isoformat(),
             "environment": environment,
-            "account_kind": "test",
-            "usage_context": "internal_test",
+            "account_kind": account_kind,
+            "usage_context": usage_context,
             **properties,
             "$process_person_profile": False,
             "$geoip_disable": True,

@@ -8,7 +8,7 @@ class El{
 }
 (async()=>{
  const ids=new Map();const $=id=>{if(!ids.has(id))ids.set(id,new El());return ids.get(id)};
- const storage=new Map(),timers=new Map(),calls=[],navigation=[],dialogs=[],windowEvents=new Map();let seq=0,answer='cancel',identity='a',clockState=null,failSave=false;
+ const storage=new Map(),timers=new Map(),calls=[],analyticsCalls=[],navigation=[],dialogs=[],windowEvents=new Map();let seq=0,answer='cancel',identity='a',clockState=null,failSave=false;
  let diary={id:1,title:'원래 제목',body:'원래 본문',date:'2026-11-03',state:'draft',version:1,photos:[]};
  const copy=()=>JSON.parse(JSON.stringify(diary));
  async function json(path,options={}){
@@ -26,18 +26,20 @@ class El{
  const context=vm.createContext({URL,URLSearchParams,AbortController,TextDecoder,setTimeout:f=>{const id=++seq;timers.set(id,f);return id},clearTimeout:id=>timers.delete(id),
   location:{search:'',assign:url=>navigation.push(url)},document:{visibilityState:'visible',querySelectorAll:()=>[],addEventListener(){}},
   window:{addEventListener:(name,fn)=>windowEvents.set(name,fn)},localStorage:{getItem:()=>''},sessionStorage:{get length(){return storage.size},key:i=>[...storage.keys()][i],getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
-  Intl,Date,Event:class{},console});
+  Intl,Date,Event:class{},console,fetch:async(path,options)=>{analyticsCalls.push([path,JSON.parse(options.body)]);return {ok:true};}});
  context.URL.createObjectURL=()=> 'blob:test';context.URL.revokeObjectURL=()=>{};
  const exported={$ ,node:(tag,cls='',text='')=>Object.assign(new El(),{tag,className:cls,textContent:text}),id:()=>String(++seq),token:()=>identity,owner:()=>identity,json,
   request:async()=>({blob:async()=>({})}),readSSE:()=>{},dialog:async(...a)=>{dialogs.push(a);return answer},confirm:async(...a)=>{dialogs.push(a);return answer},toast:()=>{},logout:()=>{},expire:()=>{},safeNext:x=>x};
  const stub=new vm.SyntheticModule(Object.keys(exported),function(){for(const[k,v]of Object.entries(exported))this.setExport(k,v)},{context});
  const policy=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_policy.js','utf8'),{context});await policy.link(()=>{});await policy.evaluate();
+ const analytics=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_analytics.js','utf8'),{context});await analytics.link(()=>stub);
  let source=fs.readFileSync('static/js/space/writing.js','utf8').replace("if(!token())void expire();else{void boot();connectNotifications();}",'');
  source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt,requestLampReply};export function fixture(d,q={base_remaining:1,extra_remaining:2},operations=[]){state={id:"test",diary:d,messages:[],operations,quota:q}};export function stateDate(){return state.date}';
- const mod=new vm.SourceTextModule(source,{context});await mod.link(spec=>spec.includes('writing_policy')?policy:stub);await mod.evaluate();const m=mod.namespace;
+ const mod=new vm.SourceTextModule(source,{context});await mod.link(spec=>spec.includes('writing_policy')?policy:spec.includes('writing_analytics')?analytics:stub);await mod.evaluate();const m=mod.namespace;
  m.fixture(copy());await m.loadDiary();m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
  answer='cancel';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');assert.equal(dialogs.at(-1)[0],'수정을 취소할까요?');assert.equal(dialogs.at(-1)[2].map(x=>x.label).join('/'),'네/아니요');
  answer='ok';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,true);assert.equal(diary.body,'원래 본문');
+ assert.deepEqual(analyticsCalls,[['/writing/analytics/view',{event:'diary_draft_displayed',diary_id:1}]]);
  m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
  const entries=Array.from({length:4},(_,i)=>({id:'p'+i,file:{name:'합성'+i+'.png',size:10}}));
  await m.uploadPhotos(entries);

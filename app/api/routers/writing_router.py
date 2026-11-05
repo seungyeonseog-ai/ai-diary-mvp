@@ -3,6 +3,7 @@ import json
 import asyncio
 import logging
 from typing import Literal
+from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 from sqlalchemy.orm import Session
@@ -12,7 +13,7 @@ from app.models.db.user_model import User
 from app.models.db.study_model import DiaryReport
 from app.models.db.writing_model import Writing, DiaryPhoto, WritingOperation
 from app.services import writing_service as service
-from app.services.posthog_capture import capture_first_save
+from app.services.posthog_capture import capture_first_save, capture_writing_event
 from app.utils.time_utils import get_kst_now, KST
 from fastapi.responses import StreamingResponse
 from app.services.writing_stream import response_events
@@ -57,9 +58,9 @@ class EditInput(VersionInput):
         return value
 
 
-def execute(function, *args):
+def execute(function, *args, **kwargs):
     try:
-        return function(*args)
+        return function(*args, **kwargs)
     except service.WritingError as exc:
         raise HTTPException(exc.status, exc.message) from None
     except Exception as exc:
@@ -164,8 +165,49 @@ def save(diary_id: int, data: VersionInput, background_tasks: BackgroundTasks,
 
 
 @router.delete("/diaries/{diary_id}")
-def discard_diary(diary_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return execute(service.discard_diary, db.get_bind(), user.id, diary_id)
+def discard_diary(diary_id: int, background_tasks: BackgroundTasks,
+                  db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    analytics = []
+    result = execute(service.discard_diary, db.get_bind(), user.id, diary_id, analytics=analytics)
+    schedule_events(background_tasks, user.id, analytics)
+    return result
+
+
+def schedule_events(background_tasks, user_id, analytics):
+    for name, key, now, properties in analytics:
+        background_tasks.add_task(capture_writing_event, name, user_id, key, now, **properties)
+
+
+class WritingView(Input):
+    event: Literal["diary_draft_displayed", "library_entered", "saved_diary_selected", "saved_diary_displayed"]
+    diary_id: int | None = Field(default=None, strict=True, gt=0)
+    navigation_id: UUID | None = None
+    visit_id: UUID | None = None
+
+
+@router.post("/analytics/view", status_code=204)
+def record_view(data: WritingView, background_tasks: BackgroundTasks,
+                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if data.event == "library_entered":
+        if data.diary_id is not None or data.visit_id is None or data.navigation_id is not None:
+            raise HTTPException(422)
+        background_tasks.add_task(capture_writing_event, data.event, user.id, data.visit_id,
+                                  get_kst_now(), visit_id=data.visit_id)
+        return
+    if data.diary_id is None or (data.event == "saved_diary_selected" and
+                                (data.navigation_id is None or data.visit_id is None)):
+        raise HTTPException(422)
+    diary = execute(service.owned, db, DiaryReport, data.diary_id, user.id)
+    is_draft = data.event == "diary_draft_displayed"
+    if diary.state != ("draft" if is_draft else "saved"):
+        raise HTTPException(409)
+    writing_id = db.query(Writing.id).filter_by(user_id=user.id, diary_id=diary.diary_id).scalar()
+    if is_draft and (diary.source_type != "ai" or not writing_id or data.navigation_id or data.visit_id):
+        raise HTTPException(409)
+    key = f"{diary.diary_id}:{data.navigation_id}" if data.navigation_id else diary.diary_id
+    background_tasks.add_task(capture_writing_event, data.event, user.id, key, get_kst_now(),
+                              writing_id=writing_id, diary_id=diary.diary_id,
+                              navigation_id=data.navigation_id, visit_id=data.visit_id)
 
 
 @router.get("/{writing_id}")
@@ -187,8 +229,12 @@ def current(writing_id: str, db: Session = Depends(get_db), user: User = Depends
 
 
 @router.post("/{writing_id}/messages")
-def message(writing_id: str, data: MessageInput, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    row = execute(service.add_message, db.get_bind(), user.id, writing_id, data.request_id, data.message)
+def message(writing_id: str, data: MessageInput, background_tasks: BackgroundTasks,
+            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    analytics = []
+    row = execute(service.add_message, db.get_bind(), user.id, writing_id, data.request_id, data.message,
+                  analytics=analytics)
+    schedule_events(background_tasks, user.id, analytics)
     return {"id": row.id, "role": row.role, "message": row.message}
 
 
@@ -226,36 +272,52 @@ async def generate(kind, source):
 
 
 @router.post("/{writing_id}/generate/{kind}")
-async def create_result(writing_id: str, kind: Literal["lamp", "diary"], data: RequestId,
+async def create_result(writing_id: str, kind: Literal["lamp", "diary"], data: RequestId, background_tasks: BackgroundTasks,
                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     op, source = execute(service.claim_operation, db.get_bind(), user.id, writing_id, data.request_id, kind)
     if source is None:
-        return {"operation_id": op.id, "state": op.state, "result": op.result}
+        result = {"diary_id": op.result["diary_id"]} if kind == "diary" else op.result
+        return {"operation_id": op.id, "state": op.state, "result": result}
+    analytics = []
     try:
         result = op.result
         if result is None:
             result = await asyncio.wait_for(generate(kind, source), timeout=240)
             execute(service.checkpoint_result, db.get_bind(), user.id, op.id, op.lease_token, result)
-        saved = execute(service.complete_operation, db.get_bind(), user.id, op.id, op.lease_token, result)
+        saved = execute(service.complete_operation, db.get_bind(), user.id, op.id, op.lease_token, result,
+                        analytics=analytics)
     except Exception as exc:
         execute(service.fail_operation, db.get_bind(), user.id, op.id, op.lease_token)
         if isinstance(exc, HTTPException):
             raise
         logger.error("writing_generation_failed kind=%s type=%s", kind, type(exc).__name__)
         raise HTTPException(503, "생성하지 못했습니다. 입력은 보존됩니다. 같은 요청으로 다시 시도해 주세요.") from None
+    schedule_events(background_tasks, user.id, analytics)
     return {"operation_id": op.id, "state": "succeeded", "result": saved}
 
 
 @router.delete("/{writing_id}")
-def discard(writing_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    execute(service.discard_writing, db.get_bind(), user.id, writing_id)
+def discard(writing_id: str, background_tasks: BackgroundTasks,
+            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    analytics = []
+    execute(service.discard_writing, db.get_bind(), user.id, writing_id, analytics=analytics)
+    schedule_events(background_tasks, user.id, analytics)
     return {"state": "discarded"}
 
 
 @router.post("/{writing_id}/response_stream")
-def stream_lamp(writing_id: str, data: RequestId, db: Session = Depends(get_db),
+def stream_lamp(writing_id: str, data: RequestId, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     op, source = execute(service.claim_operation, db.get_bind(), user.id, writing_id, data.request_id, "lamp")
-    return StreamingResponse(response_events(db.get_bind(), user.id, op, source),
+    analytics = []
+    bind, user_id = db.get_bind(), user.id
+
+    async def frames():
+        async for frame in response_events(bind, user_id, op, source, analytics=analytics):
+            schedule_events(background_tasks, user_id, analytics)
+            analytics.clear()
+            yield frame
+
+    return StreamingResponse(frames(), background=background_tasks,
                              media_type="text/event-stream",
                              headers={"Cache-Control":"no-store", "X-Accel-Buffering":"no"})

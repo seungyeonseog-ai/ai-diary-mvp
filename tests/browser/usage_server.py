@@ -9,7 +9,7 @@ space.faults['complete']=0
 original_complete=writing_service.complete_operation
 
 
-def complete_with_fault(bind,uid,key,lease,result):
+def complete_with_fault(bind,uid,key,lease,result,**kwargs):
     if space.faults['complete']:
         with Session(bind) as db:
             operation=db.get(WritingOperation,key)
@@ -17,7 +17,7 @@ def complete_with_fault(bind,uid,key,lease,result):
         if is_lamp:
             space.faults['complete']-=1
             raise RuntimeError('Synthetic result persistence failure')
-    return original_complete(bind,uid,key,lease,result)
+    return original_complete(bind,uid,key,lease,result,**kwargs)
 
 
 writing_service.complete_operation=complete_with_fault

@@ -4,6 +4,7 @@ AI 네트워크 작업은 DB 잠금 밖에서 실행한다. 기록은 원문이 
 """
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from hashlib import sha256
 from uuid import uuid4
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -91,7 +92,7 @@ def start_writing(bind, user_id):
         return row
 
 
-def add_message(bind, user_id, writing_id, client_id, message):
+def add_message(bind, user_id, writing_id, client_id, message, *, analytics=None):
     with transaction(bind, user_id) as db:
         row = owned(db, Writing, writing_id, user_id)
         writable(row, get_kst_now())
@@ -117,6 +118,8 @@ def add_message(bind, user_id, writing_id, client_id, message):
         db.add(msg)
         db.flush()
         db.add(WritingMessage(writing_id=row.id, message_id=msg.id, client_id=client_id))
+        if analytics is not None and msg.turn == 1:
+            analytics.append(("story_started", writing_id, msg.timestamp, {"writing_id": writing_id}))
         return msg
 
 
@@ -216,7 +219,11 @@ def checkpoint_result(bind, user_id, operation_id, token, result):
         op.result = result
 
 
-def complete_operation(bind, user_id, operation_id, token, result):
+def draft_digest(operation_id, text):
+    return sha256(f"{operation_id}:{text}".encode()).hexdigest()
+
+
+def complete_operation(bind, user_id, operation_id, token, result, *, analytics=None):
     now = get_kst_now()
     with transaction(bind, user_id) as db:
         op = owned(db, WritingOperation, operation_id, user_id)
@@ -232,6 +239,7 @@ def complete_operation(bind, user_id, operation_id, token, result):
             allowance = quota(db, user_id, writing, now, excluding=op.id)
             if op.quota_kind == "extra" and allowance["extra_remaining"] == 0:
                 raise WritingError(409, "추가 대화 권한이 종료되었어요. 생성 결과는 보관되며 횟수는 차감하지 않았어요.")
+        original = {}
         if op.kind == "diary":
             start = datetime.fromisoformat(writing.source_date)
             duplicate = db.query(DiaryReport).filter(DiaryReport.user_id==user_id,
@@ -251,7 +259,12 @@ def complete_operation(bind, user_id, operation_id, token, result):
             db.add(diary)
             db.flush()
             writing.diary_id = diary.diary_id
+            original = {"draft_title_digest": draft_digest(op.id, diary.title),
+                        "draft_body_digest": draft_digest(op.id, diary.content)}
             result = {"diary_id": diary.diary_id}
+            if analytics is not None:
+                analytics.append(("diary_draft_created", diary.diary_id, now,
+                                  {"writing_id": writing.id, "diary_id": diary.diary_id}))
         else:
             sources = writing_messages(db, writing)
             turn = len(sources)
@@ -261,7 +274,10 @@ def complete_operation(bind, user_id, operation_id, token, result):
                 db.add(msg)
                 db.flush()
                 db.add(WritingMessage(message_id=msg.id, writing_id=writing.id, client_id=f"{op.id}-{index}"))
-        op.result, op.state, op.lease_until = result, "succeeded", None
+            if analytics is not None and op.quota_kind == "base":
+                analytics.append(("reply_completed", op.id, now,
+                                  {"writing_id": writing.id, "operation_id": op.id, "reply_kind": "base"}))
+        op.result, op.state, op.lease_until = {**result, **original}, "succeeded", None
         return result
 
 
@@ -308,11 +324,19 @@ def save_diary(bind, user_id, diary_id, version):
         first_save = None
         if writing_id and diary.source_type == "ai":
             has_photo = db.query(DiaryPhoto.id).filter_by(user_id=user_id, diary_id=diary_id).first() is not None
-            first_save = (user_id, writing_id, diary_id, diary.updated_at, has_photo)
+            op = db.query(WritingOperation).filter_by(
+                writing_id=writing_id, user_id=user_id, kind="diary", state="succeeded").first()
+            edit_kind = "unknown"
+            if op and op.result and op.result.get("draft_title_digest") and op.result.get("draft_body_digest"):
+                title_changed = draft_digest(op.id, diary.title) != op.result["draft_title_digest"]
+                body_changed = draft_digest(op.id, diary.content) != op.result["draft_body_digest"]
+                edit_kind = {(False, False): "none", (True, False): "title",
+                             (False, True): "body", (True, True): "both"}[title_changed, body_changed]
+            first_save = (user_id, writing_id, diary_id, diary.updated_at, has_photo, edit_kind)
         return diary_payload(diary), first_save
 
 
-def discard_writing(bind, user_id, writing_id):
+def discard_writing(bind, user_id, writing_id, *, analytics=None):
     with transaction(bind, user_id) as db:
         writing = owned(db, Writing, writing_id, user_id)
         if writing.state == "discarded":
@@ -323,12 +347,19 @@ def discard_writing(bind, user_id, writing_id):
         writing.state, writing.closed_at = "discarded", get_kst_now()
         if writing.diary_id:
             diary = owned(db, DiaryReport, writing.diary_id, user_id)
+            record_draft_discard(analytics, diary, writing.id, writing.closed_at)
             diary.state, diary.updated_at = "discarded", get_kst_now()
             diary.version += 1
             db.query(DiaryPhoto).filter_by(diary_id=diary.diary_id, user_id=user_id).delete()
 
 
-def discard_diary(bind, user_id, diary_id):
+def record_draft_discard(analytics, diary, writing_id, now):
+    if analytics is not None and diary.state == "draft" and diary.source_type == "ai" and writing_id:
+        analytics.append(("diary_draft_discarded", diary.diary_id, now,
+                          {"writing_id": writing_id, "diary_id": diary.diary_id}))
+
+
+def discard_diary(bind, user_id, diary_id, *, analytics=None):
     # 과거 일기도 폐기 가능하지만 새 작성 API는 오늘 날짜만 생성한다.
     with transaction(bind, user_id) as db:
         diary = owned(db, DiaryReport, diary_id, user_id)
@@ -341,7 +372,9 @@ def discard_diary(bind, user_id, diary_id):
             for op in db.query(WritingOperation).filter_by(writing_id=writing.id, state="pending"):
                 op.state, op.lease_token, op.lease_until = "cancelled", None, None
             writing.state, writing.closed_at = "discarded", get_kst_now()
-        diary.state, diary.updated_at = "discarded", get_kst_now()
+        now = get_kst_now()
+        record_draft_discard(analytics, diary, writing.id if writing else None, now)
+        diary.state, diary.updated_at = "discarded", now
         diary.version += 1
         db.query(DiaryPhoto).filter_by(diary_id=diary.diary_id, user_id=user_id).delete()
         return result

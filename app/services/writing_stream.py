@@ -79,7 +79,7 @@ def event(kind, data):
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def response_events(bind, user_id, op, source):
+async def response_events(bind, user_id, op, source, *, analytics=None):
     complete = op.state == "succeeded"
     try:
         if source is None:
@@ -114,7 +114,7 @@ async def response_events(bind, user_id, op, source):
             for index, bubble in enumerate(result["bubbles"]):
                 yield event("bubble", {"index":index, "text":bubble, "operation_id":op.id})
         if not complete:
-            result = service.complete_operation(bind, user_id, op.id, op.lease_token, result)
+            result = service.complete_operation(bind, user_id, op.id, op.lease_token, result, analytics=analytics)
             complete = True
         yield event("saved", {"operation_id":op.id, "result":result})
     except asyncio.CancelledError:

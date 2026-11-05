@@ -1,7 +1,28 @@
-import {$,node,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261104-ui2';
+import {$,node,id,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261104-ui2';
+import {recordWritingView} from './writing_analytics.js?v=20261105-h1';
 import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-7c';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 const cover=coverURL;
+let libraryRecorded=false;
+const libraryVisit=id();
+function diaryNavigation(diaryId){
+ const navigationId=id(),url=new URL(diaryURL(diaryId,state),location.origin);
+ url.searchParams.set('navigation',navigationId);
+ url.searchParams.set('visit',libraryVisit);
+ return {url:url.pathname+url.search,record:()=>recordWritingView('saved_diary_selected',{
+  diary_id:diaryId,navigation_id:navigationId,visit_id:libraryVisit
+ })};
+}
+function linkDiary(link,diaryId){
+ const navigation=diaryNavigation(diaryId);
+ link.href=navigation.url;
+ link.addEventListener('click',navigation.record);
+ link.addEventListener('auxclick',event=>{if(event.button===1)navigation.record();});
+}
+function openDiary(diaryId){
+ const navigation=diaryNavigation(diaryId);
+ navigation.record();location.assign(navigation.url);
+}
 let pickerYear=0,state=null,today=null,sequence=0,cardSequence=0,controller=null,retry=null,photoURLs=[],socket=null,reconnect=null;
 function lockIcon(){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','icon lock-icon');svg.setAttribute('aria-hidden','true');const use=document.createElementNS(svg.namespaceURI,'use');use.setAttribute('href','#i-lock');svg.append(use);return svg;}
 function dateLabel(date){return new Intl.DateTimeFormat('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'}).format(new Date(date+'T12:00:00+09:00'));}
@@ -21,6 +42,7 @@ async function load(next=null,push=false){
   today=data.server_date;state={...wanted,page:data.page};
   const url=libraryURL(state);if(push)history.pushState(null,'',url);else history.replaceState(null,'',url);
   if(state.view==='shelf'){renderShelf(data);void loadCards();}else renderMonth(data);
+  if(!libraryRecorded){libraryRecorded=true;recordWritingView('library_entered',{visit_id:libraryVisit});}
  }catch(error){if(error.name!=='AbortError'&&error.status!==401&&same()&&requestSequence===sequence)fail(error.message,()=>load(wanted));}
  finally{if(requestSequence===sequence){$('library-loading').hidden=true;$('library-workspace').setAttribute('aria-busy','false');}}
 }
@@ -30,7 +52,7 @@ function renderShelf(data){
  try{savedBook=sessionStorage.getItem(savedBookKey);}catch{}
  shelfBooks(data.books).forEach((book,index)=>{
   if(book.state==='empty'){$('books').append(node('div','book empty','기록이 채워질 자리'));return;}
-  const element=node(book.state==='saved'?'a':'button','book '+book.state+(book.state==='saved'&&Number(book.id)%5===4?' dark-cover':''));if(book.state==='saved')element.href=diaryURL(book.id,state);
+  const element=node(book.state==='saved'?'a':'button','book '+book.state+(book.state==='saved'&&Number(book.id)%5===4?' dark-cover':''));if(book.state==='saved')linkDiary(element,book.id);
   const image=node('img');image.src=book.state==='saved'?cover(book.id):'/static/images/space/book-cover-cocoa-v1.png';image.alt='';
   const copy=node('span','book-copy');
   if(book.state==='saved'){copy.append(node('span','book-title',book.title),node('span','book-date',dateLabel(book.date)));element.title=book.title;}
@@ -66,8 +88,8 @@ function renderCalendar(data){
 }
 async function openDay(day,entries){
  if(day>today){await dialog('아직 오지 않은 날이에요','오늘의 이야기를 먼저 남겨보세요.');return;}
- if(entries.length===1){location.assign(diaryURL(entries[0].id,state));return;}
- if(entries.length>1){const result=await dialog(dateLabel(day),'열어볼 일기를 골라주세요.',[...entries.map(entry=>({label:entry.title,value:String(entry.id),primary:true})),{label:'닫기',value:'cancel'}]);const entry=entries.find(entry=>String(entry.id)===result);if(entry)location.assign(diaryURL(entry.id,state));return;}
+ if(entries.length===1){openDiary(entries[0].id);return;}
+ if(entries.length>1){const result=await dialog(dateLabel(day),'열어볼 일기를 골라주세요.',[...entries.map(entry=>({label:entry.title,value:String(entry.id),primary:true})),{label:'닫기',value:'cancel'}]);const entry=entries.find(entry=>String(entry.id)===result);if(entry&&same())openDiary(entry.id);return;}
  if(day===today){if(await confirm('오늘의 기록을 남겨볼까요?','아직 오늘 저장한 일기가 없어요.','이야기 남기기','닫기')==='ok')location.assign('/space');}
  else await dialog('이날에는 저장한 일기가 없어요','지난 날짜의 일기는 새로 작성할 수 없어요.');
 }
@@ -75,7 +97,7 @@ function renderList(data){
  $('diary-list').replaceChildren();$('list-page').textContent=`${data.page} / ${data.pages}`;$('list-prev').disabled=!data.has_newer;$('list-next').disabled=!data.has_older;
  const renderSequence=sequence;
  for(const entry of data.items){
-  const link=node('a','diary-row');link.href=diaryURL(entry.id,state);const image=node('img','diary-thumb cover');image.src=cover(entry.id);image.alt='';
+  const link=node('a','diary-row');linkDiary(link,entry.id);const image=node('img','diary-thumb cover');image.src=cover(entry.id);image.alt='';
   const copy=node('div','diary-row-copy');copy.append(node('p','diary-row-date',dateLabel(entry.date)),node('p','diary-row-title',entry.title),node('p','diary-row-excerpt',entry.excerpt));
   link.append(image,copy,node('span','row-arrow','›'));$('diary-list').append(link);
   if(entry.photo_url)void loadThumbnail(entry.photo_url,image,renderSequence);

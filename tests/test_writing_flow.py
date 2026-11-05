@@ -133,6 +133,7 @@ class WritingFlowTests(unittest.TestCase):
             self.assertRegex(properties["distinct_id"], r"^[a-f0-9]{64}$")
             self.assertRegex(properties["diary_id"], r"^[a-f0-9]{64}$")
             self.assertFalse(properties["has_photo"])
+            self.assertEqual(properties["edit_kind"], "none")
             raise TimeoutError
 
         with patch.dict(os.environ, settings), patch.object(posthog_capture, "urlopen", side_effect=fail_delivery) as send:
@@ -145,6 +146,88 @@ class WritingFlowTests(unittest.TestCase):
                 self.assertEqual(self.client.post(path, json={"version": 1}).status_code, 200)
             self.assertEqual(self.client.post(path, json={"version": 1}).status_code, 200)
             send.assert_called_once()
+
+    def test_h1_event_creation_before_transport(self):
+        with patch.object(api, "capture_writing_event") as record, patch.object(api, "capture_first_save") as saved:
+            writing, diary_id = self.draft()
+            self.message(writing)
+            self.generate(writing, "lamp", "lamp1")
+            replay = self.generate(writing, "diary", "diary1")
+            self.assertEqual(replay["result"], {"diary_id": diary_id})
+            self.assertEqual([call.args[0] for call in record.call_args_list],
+                             ["story_started", "reply_completed", "diary_draft_created"])
+            view = {"event": "diary_draft_displayed", "diary_id": diary_id}
+            self.owner = 2
+            self.assertEqual(self.client.post("/writing/analytics/view", json=view).status_code, 404)
+            self.owner = 1
+            self.assertEqual(self.client.post("/writing/analytics/view", json=view).status_code, 204)
+            detail = self.client.get(f"/writing/diaries/{diary_id}").json()
+            self.assertEqual(self.client.patch(f"/writing/diaries/{diary_id}", json={
+                "version": 1, "title": "변경", "body": detail["body"],
+            }).status_code, 200)
+            for _ in range(2):
+                self.assertEqual(self.client.post(f"/writing/diaries/{diary_id}/save",
+                                                  json={"version": 2}).status_code, 200)
+            saved.assert_called_once()
+            self.assertEqual(saved.call_args.args[-1], "title")
+            self.client.delete(f"/writing/diaries/{diary_id}")
+            self.assertEqual(record.call_args.args[0], "diary_draft_displayed")
+
+    def test_h1_photo_only_body_both_and_discard(self):
+        for kind in ("none", "body", "both", "discard"):
+            with self.subTest(kind=kind), patch.object(api, "capture_first_save") as saved, patch.object(
+                    api, "capture_writing_event") as record:
+                self.now += timedelta(days=1)
+                writing = self.start()
+                self.message(writing)
+                self.generate(writing, key=f"reply-{kind}")
+                diary = self.generate(writing, "diary", f"draft-{kind}")["result"]["diary_id"]
+                path = f"/writing/diaries/{diary}"
+                if kind == "discard":
+                    for _ in range(2):
+                        self.assertEqual(self.client.delete(f"/writing/{writing}").status_code, 200)
+                    self.assertEqual(sum(call.args[0] == "diary_draft_discarded" for call in record.call_args_list), 1)
+                    saved.assert_not_called()
+                    continue
+                detail = self.client.get(path).json()
+                if kind == "none":
+                    self.assertEqual(self.client.post(path + "/photos?version=1&request_id=photo",
+                        content=PNG, headers={"Content-Type": "image/png"}).status_code, 200)
+                else:
+                    self.assertEqual(self.client.patch(path, json={"version": 1,
+                        "title": "변경" if kind == "both" else detail["title"], "body": "본문 변경"}).status_code, 200)
+                self.assertEqual(self.client.post(path + "/save", json={"version": 2}).status_code, 200)
+                self.assertEqual(saved.call_args.args[-2:], (kind == "none", kind))
+
+    def test_h1_mock_transport_links_generation_save_and_library_views(self):
+        from uuid import uuid4
+        settings = {"POSTHOG_ENVIRONMENT": "validation", "POSTHOG_ID_KEY": "test-key",
+                    "POSTHOG_HOST": "https://us.i.posthog.com", "POSTHOG_PROJECT_TOKEN": "test-token"}
+        with patch.dict(os.environ, settings), patch.object(posthog_capture, "urlopen") as transport:
+            writing, diary = self.draft()
+            self.generate(writing, "diary", "diary1")
+            for _ in range(2):
+                self.assertEqual(self.client.post(f"/writing/diaries/{diary}/save",
+                                                  json={"version": 1}).status_code, 200)
+            visit, navigation = str(uuid4()), str(uuid4())
+            for view in (
+                {"event": "library_entered", "visit_id": visit},
+                {"event": "saved_diary_selected", "visit_id": visit, "navigation_id": navigation, "diary_id": diary},
+                {"event": "saved_diary_displayed", "visit_id": visit, "navigation_id": navigation, "diary_id": diary},
+            ):
+                self.assertEqual(self.client.post("/writing/analytics/view", json=view).status_code, 204)
+        events = [json.loads(call.args[0].data) for call in transport.call_args_list]
+        self.assertEqual([event["event"] for event in events], [
+            "story_started", "reply_completed", "diary_draft_created", "diary_first_saved",
+            "library_entered", "saved_diary_selected", "saved_diary_displayed",
+        ])
+        story, reply, draft, save, library, selected, displayed = (event["properties"] for event in events)
+        self.assertEqual(len({props["writing_id"] for props in (story, reply, draft, save)}), 1)
+        self.assertEqual(len({props["diary_id"] for props in (draft, save, selected, displayed)}), 1)
+        self.assertEqual(len({props["visit_id"] for props in (library, selected, displayed)}), 1)
+        self.assertEqual(selected["navigation_id"], displayed["navigation_id"])
+        self.assertEqual(save["edit_kind"], "none")
+        self.assertNotIn("합성", json.dumps(events, ensure_ascii=False))
 
     def test_discard_a_new_b_diary_only_b_day_source_a_and_b(self):
         first, diary_id = self.draft()

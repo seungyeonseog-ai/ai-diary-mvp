@@ -1,5 +1,9 @@
 import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261104-ui2';
 import {replyReadingDelay,PHOTO_LIMIT} from './writing_policy.js?v=20261103-8a';
+import {recordWritingView} from './writing_analytics.js?v=20261105-h1';
+const libraryParams = new URLSearchParams(location.search);
+const libraryNavigation = libraryParams.get('navigation');
+const libraryVisit = libraryParams.get('visit');
 let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null,epoch=0,activeController=null,photoURLs=[],failedPhotos=[];
 let diaryPromptTimer=null,photoLimitNotice=false,leaving=false;
 function cancelDiaryPrompt(){clearTimeout(diaryPromptTimer);diaryPromptTimer=null;}
@@ -195,7 +199,11 @@ async function loadDiary(){
  $('diary-state').textContent=detail.state==='saved'?'보관중':'초안';$('save-diary').textContent=detail.state==='saved'?'저장됨':'저장';
  $('save-note').textContent=detail.state==='saved'?'서재에도 보관되었어요.':'저장을 누르면 서재에 보관돼요.';
  if(detail.photos.length<PHOTO_LIMIT)photoLimitNotice=false;renderPhotoErrors();
- show('diary');updateActions();await renderPhotos(detail);if(stored(`edit-${detail.id}`))beginEdit({restore:true});
+ show('diary');updateActions();
+ const viewEvent=detail.state==='draft'?'diary_draft_displayed':detail.state==='saved'?'saved_diary_displayed':null;
+ if(viewEvent)recordWritingView(viewEvent,{diary_id:detail.id,
+  ...(detail.state==='saved'&&libraryNavigation&&libraryVisit?{navigation_id:libraryNavigation,visit_id:libraryVisit}:{})});
+ await renderPhotos(detail);if(stored(`edit-${detail.id}`))beginEdit({restore:true});
 }
 async function renderPhotos(detail){
  revokePhotos();$('photos').replaceChildren();const renderEpoch=++epoch;

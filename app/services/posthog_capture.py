@@ -12,7 +12,14 @@ logger = logging.getLogger(__name__)
 HOSTS = {"https://us.i.posthog.com", "https://eu.i.posthog.com"}
 
 
-def capture_first_save(user_id, writing_id, diary_id, saved_at, has_photo):
+def capture_first_save(user_id, writing_id, diary_id, saved_at, has_photo, edit_kind="unknown"):
+    capture_writing_event("diary_first_saved", user_id, diary_id, saved_at,
+                          writing_id=writing_id, diary_id=diary_id,
+                          has_photo=has_photo, edit_kind=edit_kind)
+
+
+def capture_writing_event(name, user_id, occurrence, occurred_at, *, writing_id=None,
+                          diary_id=None, operation_id=None, navigation_id=None, visit_id=None, **properties):
     token = os.getenv("POSTHOG_PROJECT_TOKEN", "").strip()
     host = os.getenv("POSTHOG_HOST", "").strip().rstrip("/")
     key = os.getenv("POSTHOG_ID_KEY", "").strip()
@@ -23,23 +30,26 @@ def capture_first_save(user_id, writing_id, diary_id, saved_at, has_photo):
     def pseudonym(kind, value):
         return hmac.new(key.encode(), f"{kind}:{value}".encode(), hashlib.sha256).hexdigest()
 
-    timestamp = saved_at.replace(tzinfo=KST).isoformat()
+    timestamp = occurred_at.replace(tzinfo=KST).isoformat()
+    for kind, value in (("writing", writing_id), ("diary", diary_id),
+                        ("operation", operation_id), ("navigation", navigation_id), ("visit", visit_id)):
+        if value is not None:
+            properties[f"{kind}_id"] = pseudonym(kind, f"{user_id}:{value}")
     payload = {
         "api_key": token,
-        "event": "diary_first_saved",
+        "event": name,
         "timestamp": timestamp,
         "properties": {
             "distinct_id": pseudonym("account", user_id),
-            "event_id": pseudonym("first-save", f"{user_id}:{diary_id}"),
-            "writing_id": pseudonym("writing", f"{user_id}:{writing_id}"),
-            "diary_id": pseudonym("diary", f"{user_id}:{diary_id}"),
+            "event_id": pseudonym("first-save" if name == "diary_first_saved" else name,
+                                  f"{user_id}:{occurrence}"),
             "schema_version": 1,
             "occurred_at": timestamp,
-            "activity_date_kst": saved_at.date().isoformat(),
+            "activity_date_kst": occurred_at.date().isoformat(),
             "environment": environment,
             "account_kind": "test",
             "usage_context": "internal_test",
-            "has_photo": has_photo,
+            **properties,
             "$process_person_profile": False,
             "$geoip_disable": True,
         },
@@ -54,4 +64,4 @@ def capture_first_save(user_id, writing_id, diary_id, saved_at, has_photo):
         with urlopen(request, timeout=3):
             pass
     except (OSError, ValueError) as exc:
-        logger.warning("posthog_first_save_delivery_failed type=%s", type(exc).__name__)
+        logger.warning("posthog_delivery_failed event=%s type=%s", name, type(exc).__name__)

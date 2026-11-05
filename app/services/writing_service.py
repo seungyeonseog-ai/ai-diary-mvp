@@ -223,7 +223,7 @@ def draft_digest(operation_id, text):
     return sha256(f"{operation_id}:{text}".encode()).hexdigest()
 
 
-def complete_operation(bind, user_id, operation_id, token, result, *, analytics=None):
+def complete_operation(bind, user_id, operation_id, token, result, *, analytics=None, attempt_id=None):
     now = get_kst_now()
     with transaction(bind, user_id) as db:
         op = owned(db, WritingOperation, operation_id, user_id)
@@ -274,9 +274,10 @@ def complete_operation(bind, user_id, operation_id, token, result, *, analytics=
                 db.add(msg)
                 db.flush()
                 db.add(WritingMessage(message_id=msg.id, writing_id=writing.id, client_id=f"{op.id}-{index}"))
-            if analytics is not None and op.quota_kind == "base":
+            if analytics is not None:
                 analytics.append(("reply_completed", op.id, now,
-                                  {"writing_id": writing.id, "operation_id": op.id, "reply_kind": "base"}))
+                                  {"writing_id": writing.id, "operation_id": op.id,
+                                   "attempt_id": attempt_id, "reply_kind": op.quota_kind}))
         op.result, op.state, op.lease_until = {**result, **original}, "succeeded", None
         return result
 

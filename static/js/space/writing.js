@@ -1,6 +1,6 @@
 import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261104-ui2';
 import {replyReadingDelay,PHOTO_LIMIT} from './writing_policy.js?v=20261103-8a';
-import {recordWritingView} from './writing_analytics.js?v=20261105-h1';
+import {recordExtraOpportunity,recordReplyObservation,recordWritingView} from './writing_analytics.js?v=20261105-h2';
 const libraryParams = new URLSearchParams(location.search);
 const libraryNavigation = libraryParams.get('navigation');
 const libraryVisit = libraryParams.get('visit');
@@ -15,7 +15,7 @@ function scheduleDiaryPrompt(text){
   if(same()&&state?.id===writingId&&(!reply||latestReply()?.request_id===reply.request_id)&&!state.diary&&!busy&&!editing&&document.visibilityState==='visible'&&!$('message-input').value.trim()&&unsubmitted().length===0)void askDiary();
  },replyReadingDelay(text));
 }
-function openCompletedDiary(){cancelDiaryPrompt();leaving=true;location.assign(`/diary/${state.diary.id}?return=${encodeURIComponent(backURL)}`);}
+function openCompletedDiary(){trackFollowup('open_diary');cancelDiaryPrompt();leaving=true;location.assign(`/diary/${state.diary.id}?return=${encodeURIComponent(backURL)}`);}
 function goToLibrary(highlight=false){
  if(highlight)try{sessionStorage.setItem(`space:${uid}:saved-book`,String(state.diary.id));}catch{}
  leaving=true;location.assign('/library');
@@ -63,9 +63,33 @@ function ops(){return state?.operations||[];}
 function unsubmitted(){const submitted=new Set(ops().filter(o=>o.kind==='lamp').flatMap(o=>o.source_ids||[]));return(state?.messages||[]).filter(m=>m.role==='user'&&!submitted.has(m.id));}
 function latestReply(){return ops().findLast(op=>op.kind==='lamp'&&op.state==='succeeded');}
 function success(){return Boolean(latestReply());}
+let observedReply=null;
+function trackReply(reply,event,startedAt,extra={}){
+ if(!reply?.operation_id||!same())return;
+ const elapsed_ms=Math.min(86_400_000,Math.max(0,Math.round(performance.now()-startedAt)));
+ recordReplyObservation(reply.writingId,event,{operation_id:reply.operation_id,attempt_id:reply.attempt_id,elapsed_ms,...extra});
+}
+function trackFollowup(action){
+ const reply=observedReply;
+ if(reply?.completedAt===undefined)return;
+ trackReply(reply,'reply_followup',reply.completedAt,{action});
+ observedReply=null;
+}
+function trackScreenLeft(){
+ const reply=observedReply;
+ if(!reply)return;
+ trackReply(reply,'reply_screen_left',reply.completedAt??reply.startedAt,{
+  stage:reply.completedAt!==undefined?'completed':reply.firstDisplayed?'streaming':'waiting'
+ });
+ observedReply=null;
+}
 function updateActions(){
  const allowance=state?.quota,remaining=(allowance?.base_remaining||0)+(allowance?.extra_remaining||0);
  const unresolved=ops().some(o=>['failed','pending'].includes(o.state));
+ if(!detailId&&same()&&state?.date&&allowance?.base_used&&allowance.extra_remaining>0&&!busy&&!unresolved&&
+    $('workspace').dataset.view==='chat'&&document.visibilityState==='visible'){
+  recordExtraOpportunity(state.id,state.date);
+ }
  for(const name of ['message-input','send-message','lamp-submit','make-diary','edit-diary','add-photo','discard-diary','cancel-edit'])$(name).disabled=busy;
  if(state&&!detailId){$('send-message').disabled=busy||remaining===0||unresolved;$('message-input').disabled=busy||remaining===0||unresolved;
  $('lamp-submit').disabled=busy||unresolved||(remaining>0&&!state.messages.length&&!$('message-input').value.trim());
@@ -149,6 +173,7 @@ async function ensureToday(){
 
 async function sendMessage(){
  const text=$('message-input').value.trim();if(!text)return true;
+ trackFollowup('story_sent');
  await ensureToday();
  let pending=stored('message-request');if(!pending||pending.message!==text)pending={request_id:id(),message:text};store('message-request',pending);
  try{await json(`/writing/${state.id}/messages`,{method:'POST',data:pending});if(!same())return false;
@@ -168,22 +193,40 @@ async function askDiary(){
 async function sendLamp(requestId){
  cancelDiaryPrompt();
  if(busy||!state)return;clearError();setBusy(true);const generationEpoch=++epoch;activeController=new AbortController();
+ let reply=null;
  try{
   if(!requestId&&!(await sendMessage()))return;
   if(!requestId&&!(await ensureToday()))return;
   if(!requestId&&!unsubmitted().length){setBusy(false);if(state.diary){toast('이야기를 입력한 뒤 전등을 눌러주세요.');$('message-input').focus();}else if(success())await askDiary();return;}
   const operation=requestId||id();store('lamp-request',operation);$('reply-status').textContent='당신의 이야기를 듣고 있어요…';
-  const response=await request(`/writing/${state.id}/response_stream`,{method:'POST',data:{request_id:operation},accept:'text/event-stream',signal:activeController.signal});
-  await readSSE(response,text=>bubble(text,'ai',true),()=>same()&&generationEpoch===epoch);
+  trackFollowup('next_reply');
+  const attempt_id=id(),startedAt=performance.now(),writingId=state.id;
+  const response=await request(`/writing/${writingId}/response_stream?attempt_id=${attempt_id}`,{method:'POST',data:{request_id:operation},accept:'text/event-stream',signal:activeController.signal});
+  const operation_id=response.headers?.get('X-Writing-Operation');
+  if(operation_id&&document.visibilityState==='visible'&&same()&&generationEpoch===epoch){
+   reply={writingId,operation_id,attempt_id,startedAt,cached:response.headers.get('X-Writing-Cached-Reply')==='1'};
+   observedReply=reply;
+  }
+  await readSSE(response,(text,index)=>{
+   bubble(text,'ai',true);
+   if(index===0&&reply&&!reply.cached&&observedReply===reply&&document.visibilityState==='visible'){
+    reply.firstDisplayed=true;trackReply(reply,'reply_first_displayed',startedAt);
+   }
+  },()=>same()&&generationEpoch===epoch);
   if(!same()||generationEpoch!==epoch)return;
-  store('lamp-request',null);await fetchState();renderChat();setBusy(false);
+  store('lamp-request',null);await fetchState();if(!same()||generationEpoch!==epoch)return;
+  renderChat();setBusy(false);
+  if(reply&&observedReply===reply&&document.visibilityState==='visible'){
+   reply.completedAt=performance.now();
+   trackReply(reply,'reply_completion_displayed',startedAt,{diary_state:state.diary?.state??'none'});
+  }
   if(!state.diary)scheduleDiaryPrompt(state.messages.filter(m=>m.role!=='user').slice(-3).map(m=>m.message).join(' '));
- }catch(failure){for(const el of $('messages').querySelectorAll('.provisional'))el.remove();
+ }catch(failure){if(reply&&observedReply===reply)observedReply=null;for(const el of $('messages').querySelectorAll('.provisional'))el.remove();
   if(failure.name!=='AbortError'&&failure.status!==401){$('reply-status').textContent='';const operation=requestId||stored('lamp-request');try{await fetchState();}catch{}error(failure.message,()=>sendLamp(operation),'다시 시도','reply');}
  }finally{activeController=null;setBusy(false);}
 }
 async function generateDiary(requestId){
- if(busy||!state)return;clearError();setBusy(true);show('generating');
+ if(busy||!state)return;trackFollowup('generate_diary');clearError();setBusy(true);show('generating');
  const operation=requestId||stored('diary-request')||id();store('diary-request',operation);
  try{if(!(await ensureToday()))return;show('generating');await json(`/writing/${state.id}/generate/diary`,{method:'POST',data:{request_id:operation}});if(!same())return;store('diary-request',null);await fetchState();await loadDiary();}
  catch(failure){if(failure.status!==401){try{await fetchState();}catch{}renderChat();error(failure.message,()=>generateDiary(operation),'일기 생성 다시 시도');}}
@@ -258,7 +301,7 @@ async function uploadPhotos(entries){if(busy)return;clearError();setBusy(true);f
 async function removePhoto(photoId){if(busy)return;const answer=await confirm('이 사진을 삭제할까요?','일기 본문과 다른 사진은 그대로 남아 있어요.','사진 삭제','취소');if(answer!=='ok')return;setBusy(true);try{const result=await json(`/writing/diaries/${state.diary.id}/photos/${photoId}`,{method:'DELETE',data:{version:state.diary.version}});await reloadPhotosAfterWrite(result.version);}catch(failure){if(failure.status!==401)error(failure.message,()=>removePhoto(photoId),'사진 삭제 다시 시도');}finally{setBusy(false);}}
 
 $('composer').addEventListener('submit',submitMessage);
-$('message-input').addEventListener('input',()=>{cancelDiaryPrompt();store('composer',$('message-input').value);resizeInput();updateActions();});
+$('message-input').addEventListener('input',()=>{trackFollowup('story_input');cancelDiaryPrompt();store('composer',$('message-input').value);resizeInput();updateActions();});
 $('message-input').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();void submitMessage();}});
 async function requestLampReply(){
  cancelDiaryPrompt();if(busy||!state||!same())return;
@@ -326,7 +369,7 @@ async function allowLeave(){
  }
  return true;
 }
-async function navigateTo(url){if(await allowLeave()){leaving=true;location.assign(url);}}
+async function navigateTo(url){if(await allowLeave()){trackFollowup('navigate');leaving=true;location.assign(url);}}
 async function accountMenu(){if(await dialog('나의 계정',`${localStorage.getItem('nickname')||'나'}님\n이야기는 로그인한 계정에만 보관돼요.`,[{label:'홈페이지',value:'home'},{label:'닫기',value:'cancel'},{label:'로그아웃',value:'logout',primary:true}])==='logout'){if(await allowLeave())await logout();}else if($('ui-dialog').returnValue==='home')await navigateTo('/');}
 $('account').addEventListener('click',accountMenu);$('settings').addEventListener('click',accountMenu);
 for(const link of document.querySelectorAll('.sidebar a,#diary-back'))link.addEventListener('click',event=>{event.preventDefault();void navigateTo(link.href);});
@@ -356,7 +399,7 @@ function connectNotifications(){
  socket.onmessage=event=>{if(!same())return;try{const data=JSON.parse(event.data);window.dispatchEvent(new Event('daily:socket'));if(['encourage_available','encourage_unavailable','seven_day_report','chart_loading_complete'].includes(data.type))window.globalNotificationManager?.storeNotification(data);}catch{}};
  socket.onclose=event=>{if(![1000,1008].includes(event.code)&&same())setTimeout(connectNotifications,5000);};
 }
-window.addEventListener('pagehide',()=>{cancelDiaryPrompt();clearTimeout(poll);socket?.close(1000);activeController?.abort();revokePhotos();});
+window.addEventListener('pagehide',()=>{trackScreenLeft();cancelDiaryPrompt();clearTimeout(poll);socket?.close(1000);activeController?.abort();revokePhotos();});
 window.addEventListener('daily:clock',async()=>{
  if(detailId||!same()||!state||busy||editing||$('workspace').dataset.view!=='chat')return;
  const count=state.messages.length,writingId=state.id;
@@ -366,5 +409,8 @@ window.addEventListener('daily:clock',async()=>{
   if(count!==state.messages.length)await restore();else updateActions();
  }catch{/* 기존 입력은 유지하고 다음 연결에서 다시 조회한다. */}
 });
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state&&!busy&&!editing)void refresh();});
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='hidden')trackScreenLeft();
+ else if(state&&!busy&&!editing)void refresh();
+});
 if(!token())void expire();else{void boot();connectNotifications();}

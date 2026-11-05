@@ -210,6 +210,47 @@ def record_view(data: WritingView, background_tasks: BackgroundTasks,
                               navigation_id=data.navigation_id, visit_id=data.visit_id)
 
 
+class ReplyObservation(Input):
+    event: Literal["reply_first_displayed", "reply_completion_displayed", "reply_followup", "reply_screen_left"]
+    attempt_id: UUID
+    operation_id: UUID
+    elapsed_ms: int = Field(strict=True, ge=0, le=86_400_000)
+    diary_state: Literal["none", "draft", "saved"] | None = None
+    action: Literal["generate_diary", "open_diary", "story_input", "story_sent", "next_reply", "navigate"] | None = None
+    stage: Literal["waiting", "streaming", "completed"] | None = None
+
+
+@router.post("/{writing_id}/analytics/extra-opportunity", status_code=204)
+def extra_opportunity(writing_id: str, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    now = get_kst_now()
+    writing = execute(service.owned, db, Writing, writing_id, user.id)
+    execute(service.writable, writing, now)
+    quota = service.quota(db, user.id, writing, now)
+    unresolved = db.query(WritingOperation.id).filter_by(writing_id=writing_id, user_id=user.id).filter(
+        WritingOperation.state.in_(("pending", "failed"))).first()
+    if quota["base_used"] and quota["extra_remaining"] and not unresolved:
+        background_tasks.add_task(capture_writing_event, "extra_reply_available", user.id,
+                                  now.date().isoformat(), now, writing_id=writing_id)
+        return
+    raise HTTPException(409)
+
+
+@router.post("/{writing_id}/analytics/reply", status_code=204)
+def reply_observed(writing_id: str, data: ReplyObservation, background_tasks: BackgroundTasks,
+                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    op = execute(service.owned, db, WritingOperation, str(data.operation_id), user.id)
+    if op.kind != "lamp" or op.writing_id != writing_id:
+        raise HTTPException(404)
+    if data.event in ("reply_completion_displayed", "reply_followup") and op.state != "succeeded":
+        raise HTTPException(409)
+    properties = data.model_dump(include={"elapsed_ms", "diary_state", "action", "stage"}, exclude_none=True)
+    key = f"{op.id}:{data.attempt_id}"
+    background_tasks.add_task(capture_writing_event, data.event, user.id, key, get_kst_now(),
+                              writing_id=writing_id, operation_id=op.id, attempt_id=data.attempt_id,
+                              reply_kind=op.quota_kind, activity_date_kst=op.source_date, **properties)
+
+
 @router.get("/{writing_id}")
 def current(writing_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = execute(service.owned, db, Writing, writing_id, user.id)
@@ -307,17 +348,28 @@ def discard(writing_id: str, background_tasks: BackgroundTasks,
 
 @router.post("/{writing_id}/response_stream")
 def stream_lamp(writing_id: str, data: RequestId, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
-                user: User = Depends(get_current_user)):
+                user: User = Depends(get_current_user), attempt_id: UUID | None = None):
     op, source = execute(service.claim_operation, db.get_bind(), user.id, writing_id, data.request_id, "lamp")
     analytics = []
     bind, user_id = db.get_bind(), user.id
+    attempt_id = attempt_id if source is not None else None
+    headers = {"Cache-Control":"no-store", "X-Accel-Buffering":"no"}
+    if attempt_id is not None:
+        headers["X-Writing-Operation"] = op.id
+        if op.result is not None:
+            headers["X-Writing-Cached-Reply"] = "1"
+        schedule_events(background_tasks, user_id, [(
+            "reply_requested", f"{op.id}:{attempt_id}", get_kst_now(),
+            {"writing_id": writing_id, "operation_id": op.id, "attempt_id": attempt_id,
+             "reply_kind": op.quota_kind},
+        )])
 
     async def frames():
-        async for frame in response_events(bind, user_id, op, source, analytics=analytics):
+        async for frame in response_events(bind, user_id, op, source, analytics=analytics, attempt_id=attempt_id):
             schedule_events(background_tasks, user_id, analytics)
             analytics.clear()
             yield frame
 
     return StreamingResponse(frames(), background=background_tasks,
                              media_type="text/event-stream",
-                             headers={"Cache-Control":"no-store", "X-Accel-Buffering":"no"})
+                             headers=headers)

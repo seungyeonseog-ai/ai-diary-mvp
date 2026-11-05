@@ -79,7 +79,7 @@ def event(kind, data):
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def response_events(bind, user_id, op, source, *, analytics=None):
+async def response_events(bind, user_id, op, source, *, analytics=None, attempt_id=None):
     complete = op.state == "succeeded"
     try:
         if source is None:
@@ -114,13 +114,18 @@ async def response_events(bind, user_id, op, source, *, analytics=None):
             for index, bubble in enumerate(result["bubbles"]):
                 yield event("bubble", {"index":index, "text":bubble, "operation_id":op.id})
         if not complete:
-            result = service.complete_operation(bind, user_id, op.id, op.lease_token, result, analytics=analytics)
+            result = service.complete_operation(bind, user_id, op.id, op.lease_token, result,
+                                                analytics=analytics, attempt_id=attempt_id)
             complete = True
         yield event("saved", {"operation_id":op.id, "result":result})
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         logger.error("writing_stream_failed type=%s", type(exc).__name__)
+        if not complete and analytics is not None and attempt_id is not None:
+            analytics.append(("reply_failed", f"{op.id}:{attempt_id}", service.get_kst_now(),
+                              {"writing_id": op.writing_id, "operation_id": op.id,
+                               "attempt_id": attempt_id, "reply_kind": op.quota_kind}))
         yield event("error", {"message":"답변을 생성하거나 저장하지 못했어요. 이야기는 보관되어 있어요. 같은 요청으로 다시 시도해 주세요."})
     finally:
         if not complete:

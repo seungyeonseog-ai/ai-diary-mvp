@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from fastapi import FastAPI
@@ -19,6 +20,8 @@ from app.models.db.chat_message_model import ChatMessage
 from app.models.db.writing_model import WritingOperation
 from app.api.dependencies.auth_dependencies import get_current_user
 from app.api.routers.writing_router import router
+from app.api.routers import writing_router
+from app.services import posthog_capture
 from app.services import writing_service as service, writing_stream as stream
 
 
@@ -132,6 +135,91 @@ class StreamTests(unittest.TestCase):
             self.assertIn('event: bubble',response.text);self.assertIn('event: saved',response.text)
             app.dependency_overrides.pop(get_current_user)
             self.assertEqual(client.post(path,json={'request_id':'lamp1'}).status_code,401)
+
+    def exercise_extra_analytics(self):
+        with Session(self.engine) as db:
+            db.get(User, 1).registered_at = service.get_kst_now()
+            db.commit()
+        app = FastAPI()
+        app.include_router(router)
+        owner = 1
+
+        def database():
+            with Session(self.engine) as db:
+                yield db
+
+        app.dependency_overrides[get_db] = database
+        app.dependency_overrides[get_current_user] = lambda: User(id=owner)
+        root = f"/writing/{self.writing.id}"
+        opportunity = root + "/analytics/extra-opportunity"
+        op, _ = self.claim()
+        with TestClient(app) as client:
+            self.assertEqual(client.post(opportunity).status_code, 409)
+            service.complete_operation(self.engine, 1, op.id, op.lease_token, {"bubbles": ["합성 기본 답변"]})
+            self.assertEqual(client.post(opportunity).status_code, 204)
+            service.add_message(self.engine, 1, self.writing.id, "extra-message", "합성 추가 이야기")
+
+            async def bad_chunks(*_):
+                yield '{"bubbles":["합성 부분 답변",'
+
+            async def good_chunks(*_):
+                yield '{"bubbles":["합성 추가 답변"]}'
+
+            first_attempt, retry_attempt = str(uuid4()), str(uuid4())
+            payload = {"request_id": "extra-request"}
+            path = root + "/response_stream"
+            with patch.object(stream, "lamp_chunks", bad_chunks):
+                failed = client.post(path, params={"attempt_id": first_attempt}, json=payload)
+                self.assertIn("event: error", failed.text)
+            self.assertEqual(client.post(opportunity).status_code, 409)
+            with patch.object(stream, "lamp_chunks", good_chunks):
+                saved = client.post(path, params={"attempt_id": retry_attempt}, json=payload)
+                replay = client.post(path, params={"attempt_id": retry_attempt}, json=payload)
+            self.assertIn("event: saved", saved.text)
+            self.assertIn("event: saved", replay.text)
+            operation = saved.headers["X-Writing-Operation"]
+            self.assertEqual(failed.headers["X-Writing-Operation"], operation)
+            self.assertNotIn("X-Writing-Operation", replay.headers)
+            observation = {"operation_id": operation, "attempt_id": retry_attempt, "elapsed_ms": 10}
+            owner = 2
+            self.assertEqual(client.post(root + "/analytics/reply",
+                json={**observation, "event": "reply_first_displayed"}).status_code, 404)
+            owner = 1
+            for event, properties in (
+                ("reply_first_displayed", {}),
+                ("reply_completion_displayed", {"diary_state": "none"}),
+                ("reply_followup", {"action": "story_input"}),
+            ):
+                self.assertEqual(client.post(root + "/analytics/reply",
+                    json={**observation, "event": event, **properties}).status_code, 204)
+        with Session(self.engine) as db:
+            self.assertEqual(db.get(WritingOperation, operation).state, "succeeded")
+            self.assertEqual(service.quota(db, 1, self.writing, service.get_kst_now())["extra_used"], 1)
+
+    def test_extra_analytics_events_before_transport(self):
+        with patch.object(writing_router, "capture_writing_event") as capture:
+            self.exercise_extra_analytics()
+        self.assertEqual([call.args[0] for call in capture.call_args_list], [
+            "extra_reply_available", "reply_requested", "reply_failed", "reply_requested", "reply_completed",
+            "reply_first_displayed", "reply_completion_displayed", "reply_followup",
+        ])
+        self.assertEqual(capture.call_args_list[4].kwargs["reply_kind"], "extra")
+        self.assertEqual(capture.call_args_list[6].kwargs["diary_state"], "none")
+
+    def test_extra_analytics_mock_transport(self):
+        settings = {"POSTHOG_ENVIRONMENT": "validation", "POSTHOG_ID_KEY": "test-key",
+                    "POSTHOG_HOST": "https://us.i.posthog.com", "POSTHOG_PROJECT_TOKEN": "test-token"}
+        with patch.dict(os.environ, settings), patch.object(posthog_capture, "urlopen") as transport:
+            self.exercise_extra_analytics()
+        events = [json.loads(call.args[0].data) for call in transport.call_args_list]
+        self.assertEqual(len(events), 8)
+        self.assertEqual(len({event["properties"]["event_id"] for event in events}), 8)
+        reply = [event["properties"] for event in events[1:]]
+        self.assertEqual(len({props["operation_id"] for props in reply}), 1)
+        self.assertEqual(len({props["attempt_id"] for props in reply}), 2)
+        self.assertEqual(reply[0]["attempt_id"], reply[1]["attempt_id"])
+        self.assertEqual(reply[2]["attempt_id"], reply[3]["attempt_id"])
+        self.assertNotIn("합성", json.dumps(events, ensure_ascii=False))
 
     def test_migrated_account_cannot_bypass_new_flow_via_legacy_creation(self):
         from app.api.routers import chat_message_router,study_router

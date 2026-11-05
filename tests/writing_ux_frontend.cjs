@@ -10,6 +10,7 @@ class El{
  const ids=new Map();const $=id=>{if(!ids.has(id))ids.set(id,new El());return ids.get(id)};
  const storage=new Map(),timers=new Map(),calls=[],analyticsCalls=[],navigation=[],dialogs=[],windowEvents=new Map();let seq=0,answer='cancel',identity='a',clockState=null,failSave=false;
  let diary={id:1,title:'원래 제목',body:'원래 본문',date:'2026-11-03',state:'draft',version:1,photos:[]};
+ let operationHeader=null,replyTick=0;
  const copy=()=>JSON.parse(JSON.stringify(diary));
  async function json(path,options={}){
   calls.push([path,options]);
@@ -26,15 +27,18 @@ class El{
  const context=vm.createContext({URL,URLSearchParams,AbortController,TextDecoder,setTimeout:f=>{const id=++seq;timers.set(id,f);return id},clearTimeout:id=>timers.delete(id),
   location:{search:'',assign:url=>navigation.push(url)},document:{visibilityState:'visible',querySelectorAll:()=>[],addEventListener(){}},
   window:{addEventListener:(name,fn)=>windowEvents.set(name,fn)},localStorage:{getItem:()=>''},sessionStorage:{get length(){return storage.size},key:i=>[...storage.keys()][i],getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
-  Intl,Date,Event:class{},console,fetch:async(path,options)=>{analyticsCalls.push([path,JSON.parse(options.body)]);return {ok:true};}});
+  Intl,Date,Event:class{},console,performance:{now:()=>++replyTick*10},
+  fetch:async(path,options)=>{analyticsCalls.push([path,JSON.parse(options.body)]);return {ok:true};}});
  context.URL.createObjectURL=()=> 'blob:test';context.URL.revokeObjectURL=()=>{};
  const exported={$ ,node:(tag,cls='',text='')=>Object.assign(new El(),{tag,className:cls,textContent:text}),id:()=>String(++seq),token:()=>identity,owner:()=>identity,json,
-  request:async()=>({blob:async()=>({})}),readSSE:()=>{},dialog:async(...a)=>{dialogs.push(a);return answer},confirm:async(...a)=>{dialogs.push(a);return answer},toast:()=>{},logout:()=>{},expire:()=>{},safeNext:x=>x};
+  request:async()=>({blob:async()=>({}),headers:{get:key=>key==='X-Writing-Operation'?operationHeader:null}}),
+  readSSE:async(_response,onBubble,valid)=>{assert(valid());onBubble('합성 첫 답변',0);onBubble('합성 두 번째 답변',1);},
+  dialog:async(...a)=>{dialogs.push(a);return answer},confirm:async(...a)=>{dialogs.push(a);return answer},toast:()=>{},logout:()=>{},expire:()=>{},safeNext:x=>x};
  const stub=new vm.SyntheticModule(Object.keys(exported),function(){for(const[k,v]of Object.entries(exported))this.setExport(k,v)},{context});
  const policy=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_policy.js','utf8'),{context});await policy.link(()=>{});await policy.evaluate();
  const analytics=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_analytics.js','utf8'),{context});await analytics.link(()=>stub);
  let source=fs.readFileSync('static/js/space/writing.js','utf8').replace("if(!token())void expire();else{void boot();connectNotifications();}",'');
- source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt,requestLampReply};export function fixture(d,q={base_remaining:1,extra_remaining:2},operations=[]){state={id:"test",diary:d,messages:[],operations,quota:q}};export function stateDate(){return state.date}';
+ source+='\nexport {restore,updateActions,uploadPhotos,removePhoto,beginEdit,applyEdit,saveDiary,loadDiary,allowLeave,scheduleDiaryPrompt,cancelDiaryPrompt,requestLampReply,sendLamp};export function fixture(d,q={base_remaining:1,extra_remaining:2},operations=[]){state={id:"test",diary:d,messages:[],operations,quota:q}};export function stateDate(){return state.date}';
  const mod=new vm.SourceTextModule(source,{context});await mod.link(spec=>spec.includes('writing_policy')?policy:spec.includes('writing_analytics')?analytics:stub);await mod.evaluate();const m=mod.namespace;
  m.fixture(copy());await m.loadDiary();m.beginEdit({});$('edit-title').value='편집 중 제목';$('edit-body').value='편집 중 본문';
  answer='cancel';await $('cancel-edit').events.click[0]();assert.equal($('edit-form').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');assert.equal(dialogs.at(-1)[0],'수정을 취소할까요?');assert.equal(dialogs.at(-1)[2].map(x=>x.label).join('/'),'네/아니요');
@@ -92,6 +96,19 @@ class El{
  m.fixture(null);$('workspace').dataset.view='chat';$('message-input').value='날짜가 바뀌어도 보존할 입력';
  clockState={id:'test',date:'2026-11-03',server_now:'2026-11-04T00:00:01+09:00',state:'active',messages:[],operations:[],diary:null,quota:{base_remaining:1,extra_remaining:2}};
  await windowEvents.get('daily:clock')();assert.equal(m.stateDate(),'2026-11-04');assert.equal($('message-input').value,'날짜가 바뀌어도 보존할 입력');
+ clockState={id:'test',date:'2026-11-04',server_now:'2026-11-04T01:00:00+09:00',state:'active',messages:[],operations:[],
+  diary:{id:1,state:'saved'},quota:{base_used:1,base_remaining:0,extra_remaining:1}};
+ const priorAnalytics=analyticsCalls.length;
+ operationHeader='test-operation';
+ await m.sendLamp('extra-request');
+ $('message-input').events.input[0]();$('message-input').events.input[0]();
+ m.updateActions();m.updateActions();
+ operationHeader=null;
+ await m.sendLamp('extra-request');
+ const replyEvents=analyticsCalls.slice(priorAnalytics).map(([,event])=>event);
+ assert.deepEqual(replyEvents.map(event=>event.event),['reply_first_displayed','extra_reply_available','reply_completion_displayed','reply_followup']);
+ assert.equal(replyEvents[2].diary_state,'saved');assert.equal(replyEvents[3].action,'story_input');
+ assert.equal(replyEvents[0].attempt_id,replyEvents[3].attempt_id);
  clockState=null;m.scheduleDiaryPrompt('답변');const beforeIdentityChange=dialogs.length;identity='b';await [...timers.values()][0]();assert.equal(dialogs.length,beforeIdentityChange);
  console.log('PASS writing UX: photo limit persistence/reset, editing text/version preservation, cancel, saved detail navigation, reading timer cancellation and account guard');
 })().catch(e=>{console.error(e);process.exitCode=1});

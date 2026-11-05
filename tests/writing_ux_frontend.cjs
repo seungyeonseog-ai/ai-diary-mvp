@@ -66,7 +66,13 @@ class El{
  m.fixture(copy(),{base_remaining:0,extra_remaining:2});$('message-input').value='추가 이야기';m.updateActions();assert.equal($('message-input').disabled,false);assert.equal($('lamp-submit').disabled,false);assert.equal($('make-diary').hidden,true);assert($('quota-label').textContent.includes('추가 2회'));
  assert.equal($('extra-quota-icon-1').dataset.lit,'true');assert.equal($('extra-quota-icon-2').dataset.lit,'true');
  assert($('quota-tooltip').textContent.includes('2번'));
- m.fixture(copy(),{base_remaining:0,extra_remaining:1});m.updateActions();assert.equal($('extra-quota-icon-1').dataset.lit,'true');assert.equal($('extra-quota-icon-2').dataset.lit,'false');
+ const lamps=['base-quota-icon','extra-quota-icon-1','extra-quota-icon-2'];
+ for(let remaining=3;remaining>=0;remaining--){
+  m.fixture(copy(),{base_remaining:remaining===3?1:0,extra_remaining:Math.min(remaining,2),features:['dialogue']});m.updateActions();
+  assert.equal(lamps.map(id=>$(id).dataset.lit==='true'?'1':'0').join(''),'0'.repeat(3-remaining)+'1'.repeat(remaining));
+ }
+ m.fixture(copy(),{base_remaining:1,extra_remaining:0,features:[]});m.updateActions();
+ assert.equal($('base-quota-icon').dataset.lit,'true');assert.equal($('extra-quota-icon-1').hidden,true);assert.equal($('extra-quota-icon-2').hidden,true);
  m.fixture(copy(),{base_remaining:0,extra_remaining:0});m.updateActions();assert.equal($('message-input').disabled,true);assert.equal($('lamp-submit').disabled,false);assert.equal($('lamp-submit').dataset.available,'false');assert.equal($('make-diary').hidden,true);
  for(const id of ['extra-quota-icon-1','extra-quota-icon-2']){assert.equal($(id).dataset.lit,'false');assert.equal($(id).hidden,false);}
  assert($('quota-tooltip').textContent.includes('모두 사용'));

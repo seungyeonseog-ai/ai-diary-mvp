@@ -76,8 +76,14 @@ function updateActions(){
   // 이전에 열린 HTML도 같은 조명 상태 갱신을 사용할 수 있다.
   if($('base-quota-text'))$('base-quota-text').textContent='';
   if($('extra-quota-text'))$('extra-quota-text').textContent='';
-  if($('base-quota-icon'))$('base-quota-icon').dataset.lit=String(allowance.base_remaining>0);
-  for(let index=1;index<=2;index++){const icon=$('extra-quota-icon-'+index);icon.hidden=allowance.features?!allowance.features.includes('dialogue'):false;icon.dataset.lit=String(index<=allowance.extra_remaining);}
+  const extraVisible=!allowance.features||allowance.features.includes('dialogue');
+  const baseIcon=$('base-quota-icon');
+  if(baseIcon&&!baseIcon.hidden)baseIcon.dataset.lit=String(remaining>(extraVisible?2:0));
+  for(let index=1;index<=2;index++){
+   const icon=$('extra-quota-icon-'+index);
+   icon.hidden=!extraVisible;
+   icon.dataset.lit=String((baseIcon&&!baseIcon.hidden?remaining:allowance.extra_remaining)>2-index);
+  }
   if($('quota-tooltip'))$('quota-tooltip').textContent=remaining>0?`오늘 답변을 ${remaining}번 더 받을 수 있어요. 답변을 받을 때마다 전등이 하나씩 꺼져요.`:'오늘 받을 수 있는 답변을 모두 사용했어요.';
  }
  if(remaining===0&&!state.diary&&!unresolved)$('reply-status').textContent='오늘의 대화를 마쳤어요. 이 이야기로 일기를 남겨보세요.';

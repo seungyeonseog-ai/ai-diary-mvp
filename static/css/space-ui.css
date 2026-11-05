@@ -13,3 +13,19 @@
 /* 예약·편지·도착 알림 */
 .nav-item{position:relative}.library-notice-count{position:absolute;right:6px;top:2px;min-width:22px;padding:2px 6px;border-radius:16px;background:#ad5838;color:white;font:13px sans-serif}
 .daily-panel{width:min(620px,90vw);max-height:85vh;overflow:auto;text-align:left;background:#fff8ec}.daily-panel h2{text-align:center}.daily-content label{display:flex;flex-direction:column;gap:18px}.daily-content select{font:inherit;padding:12px;border:1px solid #c5a681;border-radius:12px;background:#fffaf3}.daily-content>p{line-height:1.8}.daily-content .letter-body{white-space:pre-wrap;font:20px/2 var(--serif);color:#5e4633}.daily-content .letter-date{color:#957858}.daily-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:24px 0}.daily-error{color:#a13c2d;white-space:pre-wrap}.letter-list-item{display:block;width:100%;padding:18px;text-align:left;margin:9px 0;background:#f6e7d4;border:1px solid #d9bea0;border-radius:12px;font:inherit}.daily-arrival{position:fixed;right:24px;top:24px;z-index:90;background:#fff5df;color:#68452b;padding:20px;border:1px solid #d9b58a;border-radius:18px;box-shadow:0 8px 30px #51341722;max-width:380px;font:16px/1.6 sans-serif}.letter-workspace{padding:60px 9%;color:#67492f}.soft-copy{font-size:14px;color:#8b7055}
+
+.error-panel[data-kind="reply"] {
+  position: fixed;
+  z-index: 10;
+  inset: 16px 18px auto auto;
+  width: min(320px, calc(100vw - 96px));
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.error-panel[data-kind="reply"] p { overflow-wrap: anywhere; }
+.error-panel[data-kind="reply"] .secondary { min-height: 30px; padding: 4px 8px; }

@@ -46,7 +46,7 @@ async function restoreDayComposer(){
  if(best&&same()&&state.id===writingId){store('composer',best.text);if(stored('composer')===best.text)try{sessionStorage.removeItem(best.key);}catch{}}
 }
 function show(view){for(const name of ['loading','chat','generating','diary'])$(name+'-view').hidden=name!==view;$('workspace').dataset.view=view;}
-function error(message,action,label='다시 시도'){if(!same())return;$('error-message').textContent=message;$('error-panel').hidden=false;retry=action;$('retry-action').hidden=!action;$('retry-action').textContent=label;}
+function error(message,action,label='다시 시도',kind=''){if(!same())return;$('error-message').textContent=message;$('error-panel').dataset.kind=kind;$('error-panel').hidden=false;retry=action;$('retry-action').hidden=!action;$('retry-action').textContent=label;}
 function clearError(){$('error-panel').hidden=true;retry=null;}
 function setBusy(value){busy=value;$('workspace').setAttribute('aria-busy',String(value));updateActions();}
 function ops(){return state?.operations||[];}
@@ -109,7 +109,7 @@ async function restore(home=false){
  if(unfinished){
   const pending=unfinished.state==='pending'&&Date.parse(unfinished.retry_after+'+09:00')>Date.parse(state.server_now);
   if(pending){if(unfinished.kind==='diary')show('generating');else $('reply-status').textContent='이야기를 정리하고 있어요…';setBusy(true);poll=setTimeout(async()=>{poll=null;try{await fetchState();setBusy(false);await restore();}catch(failure){setBusy(false);error(failure.message,refresh,'상태 다시 확인');}},2000);}
-  else error(unfinished.kind==='diary'?'일기를 완성하지 못했어요. 이야기는 보관되어 있어요.':'답변을 완성하지 못했어요. 이야기는 보관되어 있어요.',()=>unfinished.kind==='diary'?generateDiary(unfinished.request_id):sendLamp(unfinished.request_id));
+ else error(unfinished.kind==='diary'?'일기를 완성하지 못했어요. 이야기는 보관되어 있어요.':'답변을 완성하지 못했어요. 이야기는 보관되어 있어요.',()=>unfinished.kind==='diary'?generateDiary(unfinished.request_id):sendLamp(unfinished.request_id),'다시 시도',unfinished.kind==='lamp'?'reply':'');
  }else if(success()&&unsubmitted().length===0){$('reply-status').textContent=state.diary?'오늘 나눈 이야기예요.':'이 이야기로 일기를 남길 수 있어요.';}
  updateActions();
  const scrollToLatest=()=>{if(same()&&$('workspace').dataset.view==='chat')$('messages').scrollTop=$('messages').scrollHeight;};
@@ -155,7 +155,7 @@ async function sendLamp(requestId){
   store('lamp-request',null);await fetchState();renderChat();setBusy(false);
   if(!state.diary)scheduleDiaryPrompt(state.messages.filter(m=>m.role!=='user').slice(-3).map(m=>m.message).join(' '));
  }catch(failure){for(const el of $('messages').querySelectorAll('.provisional'))el.remove();
-  if(failure.name!=='AbortError'&&failure.status!==401){$('reply-status').textContent='';const operation=requestId||stored('lamp-request');try{await fetchState();}catch{}error(failure.message,()=>sendLamp(operation));}
+  if(failure.name!=='AbortError'&&failure.status!==401){$('reply-status').textContent='';const operation=requestId||stored('lamp-request');try{await fetchState();}catch{}error(failure.message,()=>sendLamp(operation),'다시 시도','reply');}
  }finally{activeController=null;setBusy(false);}
 }
 async function generateDiary(requestId){

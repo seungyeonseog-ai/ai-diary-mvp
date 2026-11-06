@@ -398,14 +398,14 @@ class WritingFlowTests(unittest.TestCase):
         self.assertEqual((quota["extra_used"],quota["extra_remaining"]),(1,1))
 
     def test_extra_pending_reservation_expiry_and_retry_rechecks_rights(self):
-        self.now = datetime(2026,11,8,23,59,50)
+        self.now = datetime(2026,11,6,23,59,50)
         writing = self.start();self.message(writing);self.generate(writing)
         self.message(writing,key="extra")
         op,_ = service.claim_operation(self.engine,1,writing,"boundary","lamp")
         quota = self.client.get(f"/writing/{writing}").json()["quota"]
         self.assertEqual((quota["extra_used"],quota["extra_reserved"],quota["extra_remaining"]),(0,1,1))
-        # 가입11/02의 체험 종료는11/09자정. AI 처리 도중 만료면 차감하지 않는다.
-        self.now = datetime(2026,11,9)
+        # 가입11/02의 체험 종료는11/07자정. AI 처리 도중 만료면 차감하지 않는다.
+        self.now = datetime(2026,11,7)
         with self.assertRaises(service.WritingError):
             service.complete_operation(self.engine,1,op.id,op.lease_token,{"bubbles":["늦은 합성"]})
         service.fail_operation(self.engine,1,op.id,op.lease_token)

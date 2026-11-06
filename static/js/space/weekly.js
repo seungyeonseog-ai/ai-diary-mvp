@@ -31,7 +31,7 @@ async function load(){const current=++sequence;notifyRetry=null;clear();$('weekl
   requestAnimationFrame(()=>void notify());
  }catch(exc){if(!same()||current!==sequence||exc.status===401)return;clear();$('weekly-empty').hidden=exc.status!==404;$('weekly-status').textContent=exc.status===404?'':exc.message;$('weekly-retry').hidden=exc.status===404;
   if(exc.status===404){$('weekly-empty-title').textContent='아직 저장된 주간 결과가 없어요.';$('weekly-empty-copy').textContent='';$('weekly-empty-hint').hidden=true;
-   try{const access=await json('/account/access');if(!same()||current!==sequence)return;const allowed=access.features.includes('weekly');$('weekly-empty-title').textContent=allowed?'조금만 더 기록해볼까요?':'무료 이용 중에는 새 주간 차트가 제공되지 않아요.';$('weekly-empty-copy').textContent=allowed?'체험 기간 안에 조건을 채우면 주간 차트를 확인할 수 있어요.':'이전에 받은 주간 결과는 계속 볼 수 있어요. 이용권 페이지에서 원하는 조합을 선택할 수 있어요.';$('weekly-empty-hint').hidden=!allowed;}
+   try{const access=await json('/account/access');if(!same()||current!==sequence)return;const allowed=access.features.includes('weekly');if($('cycle-days'))$('cycle-days').textContent=String(access.cycle_days??5);$('weekly-empty-title').textContent=allowed?'조금만 더 기록해볼까요?':'무료 이용 중에는 새 주간 차트가 제공되지 않아요.';$('weekly-empty-copy').textContent=allowed?'체험 기간 안에 조건을 채우면 주간 차트를 확인할 수 있어요.':'이전에 받은 주간 결과는 계속 볼 수 있어요. 이용권 페이지에서 원하는 조합을 선택할 수 있어요.';$('weekly-empty-hint').hidden=!allowed;}
    catch(failure){if(same()&&current===sequence&&failure.status!==401){$('weekly-status').textContent='이용 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.';$('weekly-retry').hidden=false;}}
   }
  }}

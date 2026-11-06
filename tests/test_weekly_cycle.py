@@ -38,7 +38,8 @@ class WeeklyCycleTests(unittest.TestCase):
         with Session(self.engine) as db:
             for uid in (1,2):db.add(User(id=uid,username=f'w{uid}',email=f'w{uid}@example.org',nickname='합성',hashed_password='unused',registered_at=datetime(2026,11,1)))
             db.flush()
-            for uid in (1,2):ensure_account(db,db.get(User,uid))
+            for uid in (1,2):
+                row=ensure_account(db,db.get(User,uid));row.trial_expires_at=datetime(2026,11,8)
             db.commit()
     def tearDown(self):self.engine.dispose();self.tmp.cleanup()
     def chat(self,day,hour=12,minute=0,uid=1,role='user'):

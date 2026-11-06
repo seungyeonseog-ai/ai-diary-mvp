@@ -1,6 +1,6 @@
 {% extends "ui_base.html" %}{% block title %}서재 · 나의 공간{% endblock %}
 {% block body_class %}space-page library-page{% endblock %}
-{% block head %}<link rel="stylesheet" href="/static/css/library.css?v=20261106-covers">{% endblock %}
+{% block head %}<link rel="modulepreload" href="/static/js/space/library_model.js?v=20261106-covers"><link rel="modulepreload" href="/static/js/space/writing_analytics.js?v=20261105-weekly-metrics"><link rel="stylesheet" href="/static/css/library.css?v=20261106-speed1">{% endblock %}
 {% block content %}{% include "space_sidebar.html" %}
 <main id="library-workspace" class="workspace library-workspace{% if request.query_params.get("view") in ["calendar","list"] %} more-workspace{% endif %}" aria-busy="true">
 <header id="library-hero" class="library-hero"{% if request.query_params.get("view") in ["calendar","list"] %} hidden{% endif %}><h1>서재</h1><p>당신의 소중한 이야기들이<br>차곡차곡 모여 있는 공간이에요.</p></header>
@@ -9,7 +9,7 @@
 <div class="shelf-row"><button id="books-older" class="shelf-arrow" aria-label="과거 일기 5권 보기">‹</button><div id="books" class="books"></div><button id="books-newer" class="shelf-arrow" aria-label="최근 일기 5권 보기">›</button></div><p id="shelf-page" class="shelf-page"></p>
 <div id="empty-shelf" class="empty-shelf" hidden><p>아직 저장한 일기가 없어요.</p><a class="primary" href="/space">오늘의 이야기 남기기</a></div>
 <div class="library-cards"><section class="library-card weekly-card"><div class="card-heading"><h2>주간 차트</h2><a href="/weekly">더보기 {{icon('arrow')}}</a></div><div id="weekly-preview" class="weekly-preview"><p>마음의 흐름을 살펴보고 있어요.</p></div></section>
-<section class="library-card letter-card"><div class="card-heading"><h2>응원 메시지</h2><a href="/letters">더보기 {{icon('arrow')}}</a></div><div class="letter-arrival"><div class="letter-art"><img src="/static/images/space/envelope-v2.png" alt="봉투"><span id="letter-lock" class="letter-lock" hidden>{{icon('lock')}}</span></div><div><p id="letter-status">오늘의 편지를 확인하고 있어요.</p><span id="letter-note">당신을 위한 마음이 머무는 곳이에요.</span></div></div></section></div>
+<section class="library-card letter-card"><div class="card-heading"><h2>응원 메시지</h2><a href="/letters">더보기 {{icon('arrow')}}</a></div><div class="letter-arrival"><div class="letter-art"><img src="/static/images/space/envelope-v2-q90.webp" alt="봉투"><span id="letter-lock" class="letter-lock" hidden>{{icon('lock')}}</span></div><div><p id="letter-status">오늘의 편지를 확인하고 있어요.</p><span id="letter-note">당신을 위한 마음이 머무는 곳이에요.</span></div></div></section></div>
 </section>
 <section id="diaries-view" class="diaries-view" hidden aria-label="지난 일기"><a class="more-back" href="/library">‹ 서재로 돌아가기</a>
 <div class="view-tabs" role="group" aria-label="일기 보기 방식"><button id="calendar-tab" aria-pressed="true">달력으로 보기</button><button id="list-tab" aria-pressed="false">목록으로 보기</button></div>
@@ -22,4 +22,4 @@
 </main>
 
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261106-covers"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261106-speed1"></script>{% endblock %}

@@ -1,4 +1,4 @@
-"""첫 대화 날짜부터 7일 고정 기간. 매일23:50 원본은 작업등록 전에 고정한다."""
+"""첫 대화 날짜부터 계정별 5일/기존 7일 고정 기간. 매일23:50 원본은 작업등록 전에 고정한다."""
 from datetime import datetime,timedelta
 from uuid import uuid4
 from sqlalchemy import func
@@ -11,7 +11,7 @@ from app.models.db.daily_model import ResultNotice
 from app.services.writing_service import transaction,day_messages,format_users
 from app.repositories.weekly_analysis_repository import SOURCE_IDS_KEY
 from app.utils.time_utils import get_kst_now
-from app.services.access_service import permits
+from app.services.access_service import permits,cycle_days
 
 
 def cutoff(day):return datetime.fromisoformat(day).replace(hour=23,minute=50)
@@ -41,18 +41,19 @@ def dispatch(bind,now=None):
                         source_ids=[r.id for r in rows],state='pending' if rows else 'skipped',attempts=0))
                     db.flush()
                 day+=timedelta(days=1)
+            period=cycle_days(db,uid)
             start=datetime.fromisoformat(clock.anchor_date)
-            while cutoff((start+timedelta(days=6)).date().isoformat())<=now:
-                end=(start+timedelta(days=6)).date().isoformat();key=f'{uid}:weekly:{end}'
+            while cutoff((start+timedelta(days=period-1)).date().isoformat())<=now:
+                end=(start+timedelta(days=period-1)).date().isoformat();key=f'{uid}:weekly:{end}'
                 if not db.get(AnalysisJob,key):
                     daily=db.query(AnalysisJob).filter(AnalysisJob.user_id==uid,AnalysisJob.kind=='daily',
                         AnalysisJob.end_date>=start.date().isoformat(),AnalysisJob.end_date<=end).order_by(AnalysisJob.end_date).all()
                     active=[j for j in daily if j.source_ids]
                     if len(active)<3 or not permits(db,uid,'weekly',now):
                         db.add(AnalysisJob(id=key,user_id=uid,kind='weekly',start_date=start.date().isoformat(),end_date=end,source_ids=[],state='skipped',attempts=0))
-                    elif len(daily)==7 and all(j.state in ('done','skipped') for j in daily):
+                    elif len(daily)==period and all(j.state in ('done','skipped') for j in daily):
                         db.add(AnalysisJob(id=key,user_id=uid,kind='weekly',start_date=start.date().isoformat(),end_date=end,source_ids=[j.result_id for j in active],state='pending',attempts=0))
-                start+=timedelta(days=7)
+                start+=timedelta(days=period)
     with Session(bind) as db:return [r.id for r in db.query(AnalysisJob).filter(AnalysisJob.state.in_(['pending','retry','running']),
         (AnalysisJob.retry_at.is_(None))|(AnalysisJob.retry_at<=now)).order_by(AnalysisJob.end_date,AnalysisJob.kind)]
 
@@ -95,7 +96,7 @@ def run(bind,key,generate=None,now=None):
                     with Session(bind) as db:
                         if not permits(db,uid,'weekly',now if fixed_clock else get_kst_now()):
                             raise PermissionError('Weekly access expired during generation')
-                    value=validate_weekly(phase,generate(phase,{'days':source,'previous':result}))
+                    value=validate_weekly(phase,generate(phase,{'days':source,'period_start':job.start_date,'period_end':job.end_date,'period_days':(datetime.fromisoformat(job.end_date)-datetime.fromisoformat(job.start_date)).days+1,'previous':result}))
                     result={**result,phase:value};checkpoint(bind,uid,key,lease,result=result)
         with transaction(bind,uid) as db:
             live=db.get(AnalysisJob,key)
@@ -123,9 +124,10 @@ def run(bind,key,generate=None,now=None):
 
 def status(db,uid,now=None):
     now=now or get_kst_now();clock=db.get(WeeklyClock,uid)
-    if not clock:return {'state':'waiting_dialogue','days':0}
-    anchor=datetime.fromisoformat(clock.anchor_date).date();index=max(0,(now.date()-anchor).days//7);start=anchor+timedelta(days=7*index);end=start+timedelta(days=6)
+    period=cycle_days(db,uid)
+    if not clock:return {'state':'waiting_dialogue','days':0,'period_days':period}
+    anchor=datetime.fromisoformat(clock.anchor_date).date();index=max(0,(now.date()-anchor).days//period);start=anchor+timedelta(days=period*index);end=start+timedelta(days=period-1)
     rows=db.query(ChatMessage.timestamp).filter(ChatMessage.user_id==uid,ChatMessage.role=='user',ChatMessage.timestamp>=datetime.combine(start,datetime.min.time()),ChatMessage.timestamp<cutoff(end.isoformat())).all()
     days=len({r[0].date() for r in rows if r[0]<cutoff(r[0].date().isoformat())})
     failed=db.query(AnalysisJob).filter(AnalysisJob.user_id==uid,AnalysisJob.state=='retry').first()
-    return {'state':'retry' if failed else 'waiting_period','days':days,'start':start.isoformat(),'end':end.isoformat()}
+    return {'state':'retry' if failed else 'waiting_period','days':days,'period_days':period,'start':start.isoformat(),'end':end.isoformat()}

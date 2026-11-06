@@ -14,7 +14,7 @@ PLANS = {
 
 def trial_period(user):
     start = user.trial_started_at or user.registered_at
-    end = datetime.combine(start.date() + timedelta(days=7), datetime.min.time()) if start else None
+    end = datetime.combine(start.date() + timedelta(days=5), datetime.min.time()) if start else None
     return start, end
 
 
@@ -37,12 +37,23 @@ def access(db, uid, now):
     trial = start is not None and start <= now < end
     features = PLANS["super"] if trial else ()
     return {"plan": "free", "features": list(features), "trial_state": "active" if trial else "expired" if end else "registration_unknown",
+            "trial_days": (end.date()-start.date()).days if start and end else 5, "cycle_days": cycle_days(db, uid),
             "trial_started_at": start.isoformat() if start else None,
             "trial_expires_at": end.isoformat() if end else None}
 
 
 def permits(db, uid, feature, now):
     return feature in access(db, uid, now)["features"]
+
+
+def cycle_days(db, uid):
+    """기존 저장된 7일 체험은 유지한다. 새 계정은 5일 정책이다."""
+    row = db.get(AccountAccess, uid)
+    if row and row.trial_started_at and row.trial_expires_at:
+        days = (row.trial_expires_at.date() - row.trial_started_at.date()).days
+        if days == 7:
+            return 7
+    return 5
 
 
 def selected_plan(db, uid):

@@ -8,7 +8,8 @@ async function header(){if(!token())return;const observedToken=token();try{
  }catch(error){if(error.status===401&&token()===observedToken)clearIdentity();}}
 document.getElementById('enter-space').addEventListener('click',async()=>{
  if(authenticated){location.assign('/space');return;}
- if(token()){try{await json('/account/me');location.assign('/space');return;}catch(error){if(error.status!==401)await dialog('잠시 연결이 어려워요',error.message);return;}}
+ // 공간의 실제 API가 인증을 확인한다. 진입 전에 같은 인증 왕복을 반복하지 않는다.
+ if(token()){location.assign('/space');return;}
  const answer=await dialog('로그인이 필요한 화면입니다','나의 공간에 들어가려면 로그인해 주세요.');if(answer==='ok')location.assign('/login');
 });
 void header();

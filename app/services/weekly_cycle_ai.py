@@ -37,7 +37,7 @@ def generate(kind,data):
         shapes={'emotion':{'trend':'감정 흐름','dominant_emotion':'눈에 띈 감정','key_changes':['변화'],'recommendation':'따뜻한 제안'},
                 'keyword':{'main_themes':['주요 주제'],'trending_keywords':['키워드'],'recurring_patterns':['반복된 이야기'],'insights':'인사이트'},
                 'comprehensive':{'overall_mood':'전체 분위기','key_achievements':['성취'],'challenges':['어려움'],'growth_areas':['성장'],'weekly_theme':'주제','next_week_focus':'다음 제안','overall_assessment':'한 주를 돌아보는 설명'}}
-        system='한 사람의 7일 기간 중 실제 대화 분석이 있는 날짜만 근거로 따뜻하게 돌아보세요. 빈 날짜를 추측하거나 심리 진단하지 마세요. 레이더 점수는 생성하지 마세요. JSON만 반환하세요.'
+        system='입력에 명시된 기간 중 실제 대화 분석이 있는 날짜만 근거로 따뜻하게 돌아보세요. 빈 날짜를 추측하거나 심리 진단하지 마세요. 레이더 점수는 생성하지 마세요. JSON만 반환하세요.'
         user=json.dumps({'input':data,'response_shape':shapes[kind]},ensure_ascii=False)
     with OpenAI(api_key=settings.openai_api_key,max_retries=0,timeout=60) as client:
         response=client.chat.completions.create(model=settings.openai_model,messages=[{'role':'system','content':system},{'role':'user','content':user}],max_completion_tokens=1200)

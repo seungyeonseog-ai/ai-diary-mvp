@@ -68,7 +68,8 @@ app = FastAPI()
 
 
 # 🔽 이거 추가!
-app.mount("/static", StaticFiles(directory="static"), name="static")
+from app.core.public_static import public_static
+app.mount("/static", public_static(), name="static")
 
 
 

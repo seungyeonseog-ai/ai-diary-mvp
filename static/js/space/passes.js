@@ -7,7 +7,8 @@ async function load(){
  $('access-error').hidden=true;
  try{const data=await json('/account/access');if(!same())return;
   $('access-title').textContent=data.trial_state==='active'?'슈퍼패스 무료 체험 중':'무료 이용 중';
-  $('access-period').textContent=data.trial_state==='active'?`체험 종료: ${date(data.trial_expires_at)} (한국 시간)` :data.trial_state==='expired'?'7일 체험이 종료되어 무료로 전환됐어요. 기본 일기와 기억은 계속 이용할 수 있어요.':'기본 일기와 기억은 계속 무료로 이용할 수 있어요.';
+  if($('cycle-days'))$('cycle-days').textContent=String(data.cycle_days??5);
+  $('access-period').textContent=data.trial_state==='active'?`체험 종료: ${date(data.trial_expires_at)} (한국 시간)` :data.trial_state==='expired'?`${data.trial_days??5}일 체험이 종료되어 무료로 전환됐어요. 기본 일기와 기억은 계속 이용할 수 있어요.`:'기본 일기와 기억은 계속 무료로 이용할 수 있어요.';
   $('access-features').textContent=data.features.length?`이용 가능: ${data.features.map(f=>names[f]).join(' · ')}`:'체험 혜택인 추가 대화·저녁 응원·주간 차트는 새로 제공하지 않아요. 기존 결과는 계속 볼 수 있어요.';
   $('plan-cards').replaceChildren();
   for(const plan of data.plans){const card=node('article','plan-card'),heading=node('h3','',plan.label),description=node('p','',plan.features.length?plan.features.map(f=>names[f]).join('\n'):'기본 대화 1회와 일기\n폐기 후 기본 대화 복구\n기본 기억·기존 결과 열람');card.append(heading,description);if(data.trial_state==='active'&&plan.id==='super')card.append(node('span','selected','체험 중인 구성'));else if(data.trial_state!=='active'&&plan.id==='free')card.append(node('span','selected','현재 이용권'));
@@ -25,6 +26,7 @@ async function choose(plan){
  if(!pending&&same())await load();
 }
 $('access-retry').addEventListener('click',load);
-window.addEventListener('space:identity-cleared',()=>{$('plan-cards').replaceChildren();$('access-title').textContent='';$('access-period').textContent='';$('access-features').textContent='';$('choice-status').textContent='';});
+window.addEventListener('space:identity-cleared',()=>{$('plan-cards').replaceChildren();$('access-title').textContent='';if($('cycle-days'))$('cycle-days').textContent=String(data.cycle_days??5);
+  $('access-period').textContent='';$('access-features').textContent='';$('choice-status').textContent='';});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void load();});
 if(!identity)void expire();else void load();

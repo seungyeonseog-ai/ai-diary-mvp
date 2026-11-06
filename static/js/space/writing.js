@@ -1,4 +1,4 @@
-import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261106-prompt';
+import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261104-ui2';
 import {replyReadingDelay,PHOTO_LIMIT} from './writing_policy.js?v=20261103-8a';
 import {recordExtraOpportunity,recordReplyObservation,recordWritingView} from './writing_analytics.js?v=20261106-journey';
 const libraryParams = new URLSearchParams(location.search);

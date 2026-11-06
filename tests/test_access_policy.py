@@ -41,9 +41,9 @@ class AccessTests(unittest.TestCase):
 
     def test_trial_includes_signup_date_and_ends_at_midnight(self):
         with Session(self.engine) as db:
-            self.assertEqual(access(db,1,self.start)["trial_expires_at"], "2026-11-10T00:00:00")
-            self.assertTrue(permits(db,1,"weekly",datetime(2026,11,9,23,59,59)))
-            self.assertFalse(permits(db,1,"weekly",datetime(2026,11,10)))
+            self.assertEqual(access(db,1,self.start)["trial_expires_at"], "2026-11-08T00:00:00")
+            self.assertTrue(permits(db,1,"weekly",datetime(2026,11,7,23,59,59)))
+            self.assertFalse(permits(db,1,"weekly",datetime(2026,11,8)))
             self.assertFalse(permits(db,1,"dialogue",self.start-timedelta(seconds=1)))
 
     def test_pilot_survey_after_trial_resumes_per_account_and_reuses_plan_choice(self):
@@ -148,7 +148,7 @@ class AccessTests(unittest.TestCase):
             user.registered_at = None
             user.trial_started_at = datetime(2026,11,2,15)
             ensure_account(db,user)
-            self.assertEqual(access(db,1,self.start)["trial_expires_at"],"2026-11-09T00:00:00")
+            self.assertEqual(access(db,1,self.start)["trial_expires_at"],"2026-11-07T00:00:00")
             user = db.get(User,2)
             user.registered_at = None
             self.assertEqual(access(db,2,self.start)["trial_state"],"registration_unknown")
@@ -193,7 +193,7 @@ class AccessTests(unittest.TestCase):
             row=db.get(AccountAccess,user.id)
             self.assertEqual(user.registered_at,self.start)
             self.assertEqual(row.trial_started_at,self.start)
-            self.assertEqual(row.trial_expires_at,datetime(2026,11,10))
+            self.assertEqual(row.trial_expires_at,datetime(2026,11,8))
 
     def test_writing_api_uses_midnight_expiry_and_preserves_free_base(self):
         from unittest.mock import patch
@@ -206,7 +206,7 @@ class AccessTests(unittest.TestCase):
         # 실제 작성 라우터의 조회 응답까지 검사하며 AI 요청은 하지 않는다.
         Base.metadata.create_all(self.engine)
         app=FastAPI();app.include_router(api.router)
-        owner=[1];now=[datetime(2026,11,9,23,59,59)]
+        owner=[1];now=[datetime(2026,11,7,23,59,59)]
         def database():
             with Session(self.engine) as db:yield db
         app.dependency_overrides[get_db]=database
@@ -215,7 +215,7 @@ class AccessTests(unittest.TestCase):
             key=client.post("/writing").json()["id"]
             quota=client.get("/writing/"+key).json()["quota"]
             self.assertEqual(quota["extra_remaining"],2)
-            self.assertEqual(quota["trial_expires_at"],"2026-11-10T00:00:00")
+            self.assertEqual(quota["trial_expires_at"],"2026-11-08T00:00:00")
             now[0]=datetime(2026,11,10)
             key=client.post("/writing").json()["id"]
             quota=client.get("/writing/"+key).json()["quota"]
@@ -233,7 +233,7 @@ class AccessTests(unittest.TestCase):
         require_access_schema(self.engine)
         with Session(self.engine) as db:
             trial = db.get(AccountAccess,1).trial_expires_at
-            self.assertEqual(trial,datetime(2026,11,10))
+            self.assertEqual(trial,datetime(2026,11,8))
         migrate_access_schema(self.engine)
         with closing(sqlite3.connect(self.path)) as db, closing(sqlite3.connect(backup)) as original:
             self.assertEqual(digest_existing(db),before)

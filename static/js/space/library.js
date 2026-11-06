@@ -30,7 +30,9 @@ function clearPhotos(){for(const url of photoURLs)URL.revokeObjectURL(url);photo
 function fail(message,action){$('library-error-message').textContent=message;$('library-error').hidden=false;retry=action;}
 async function load(next=null,push=false){
  controller?.abort();controller=new AbortController();const signal=controller.signal,requestSequence=++sequence;
- $('library-workspace').setAttribute('aria-busy','true');$('library-error').hidden=true;$('library-loading').hidden=false;$('shelf-view').hidden=true;$('diaries-view').hidden=true;clearPhotos();
+ const refreshing=state&&next&&next.view===state.view&&next.page===state.page&&next.month===state.month;
+ $('library-workspace').setAttribute('aria-busy','true');$('library-error').hidden=true;
+ if(!refreshing){$('library-loading').hidden=false;$('shelf-view').hidden=true;$('diaries-view').hidden=true;clearPhotos();}
  let wanted=next;
  try{
   let initial;
@@ -50,6 +52,7 @@ async function load(next=null,push=false){
     sessionStorage.removeItem(key);
    }catch{}
   }
+  if(refreshing)clearPhotos();
   if(state.view==='shelf'){renderShelf(data);void loadCards();}else renderMonth(data);
   if(savedDiaryId>0)recordWritingView('library_entered_after_save',{diary_id:savedDiaryId,visit_id:libraryVisit});
   if(!libraryRecorded){libraryRecorded=true;recordWritingView('library_entered',{visit_id:libraryVisit});}
@@ -71,7 +74,10 @@ function renderShelf(data){
   if(book.state==='saved'&&String(book.id)===savedBook){
    try{sessionStorage.removeItem(savedBookKey);}catch{}
    element.classList.add('just-saved');
-   setTimeout(()=>element.classList.remove('just-saved'),3000);
+   const stopGlow=()=>element.classList.remove('just-saved');
+   const glowTimer=setTimeout(stopGlow,6000);
+   element.addEventListener('click',()=>{clearTimeout(glowTimer);stopGlow();},{once:true});
+   element.addEventListener('auxclick',()=>{clearTimeout(glowTimer);stopGlow();},{once:true});
   }
  });
  $('books-older').disabled=!data.has_older;$('books-newer').disabled=!data.has_newer;
@@ -134,7 +140,7 @@ async function loadCards(){
   const letterCopy=letterReady?['오늘의 응원 편지가 도착했어요.','봉투를 열어 따뜻한 마음을 확인해보세요.']:letterState==='waiting_time'?['오늘의 편지를 기다리고 있어요.','응원 편지가 도착하면 이곳에서 확인할 수 있어요.']:letterState==='pending'?['응원 편지를 준비하고 있어요.','잠시 후 다시 확인해 주세요.']:letterState==='skipped'?['오늘의 편지는 쉬어가요.','예약 시각에 대화가 없었어요. 다음 예약을 기다려주세요.']:letterState==='discarded'?['오늘의 편지를 처리했어요.','다음 편지는 내일 예약 시각에 도착해요.']:['오늘의 편지를 기다리고 있어요.','예약 시각 전 오늘의 이야기를 들려주세요.'];
   $('letter-status').textContent=letterCopy[0];$('letter-note').textContent=letterCopy[1];
   if(data.weekly.state==='ready'){try{const weekly=await json('/study/weekly/latest');if(same()&&requestSequence===cardSequence)chart(weekly);}catch(error){if(same()&&requestSequence===cardSequence)cardError(error.message);}}
-  else{const hint=node('div','weekly-hint');hint.append(node('p','','대화를 시작한 날부터 7일마다 확인해요.'),node('p','','그 기간에 대화한 날짜가 3일 이상이면 만들어져요.'));$('weekly-preview').replaceChildren(lockIcon(),node('strong','','조금만 더 기록해볼까요?'),node('p','','나만의 주간 차트를 확인할 수 있어요.'),hint);}
+  else{const hint=node('div','weekly-hint');hint.append(node('p','',`대화를 시작한 날부터 ${data.weekly.cycle?.period_days??5}일마다 확인해요.`),node('p','','그 기간에 대화한 날짜가 3일 이상이면 만들어져요.'));$('weekly-preview').replaceChildren(lockIcon(),node('strong','','조금만 더 기록해볼까요?'),node('p','','나만의 주간 차트를 확인할 수 있어요.'),hint);}
  }catch(error){if(same()&&requestSequence===cardSequence&&error.status!==401){$('letter-status').textContent='편지 상태를 불러오지 못했어요.';$('letter-note').textContent='잠시 후 다시 확인해 주세요.';cardError(error.message);}}
 }
 window.addEventListener('daily:changed',()=>{if(state?.view==='shelf')void loadCards();});

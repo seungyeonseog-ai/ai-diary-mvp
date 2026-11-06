@@ -31,7 +31,7 @@
 .month-picker #month-picker-close{right:10px;top:8px;width:26px;height:26px;font-size:20px}
 @media(max-width:650px){.month-picker{width:min(330px,calc(100vw - 100px));padding:40px 12px 14px}.month-picker .picker-months{gap:6px}.month-picker .picker-months button{font-size:15px;padding:9px 2px}.month-picker .picker-year-label{font-size:20px}.month-picker .year-picker{gap:14px}}
 
-.book.just-saved { animation: saved-book-glow 1s ease-in-out 3; }
+.book.just-saved { animation: saved-book-glow 1s ease-in-out 6; }
 @keyframes saved-book-glow {
   0%, 100% { filter: drop-shadow(0 0 3px #ffc66e44); }
   50% { filter: drop-shadow(0 0 11px #ffc66ecc); }

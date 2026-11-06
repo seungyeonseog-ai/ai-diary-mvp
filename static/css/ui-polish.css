@@ -13,7 +13,7 @@
 .quota-icon{display:inline-block;flex-shrink:0;width:36px;height:36px;background-repeat:no-repeat;background-size:200% 100%;background-position:left}
 .quota-icon[data-lit=true]{filter:sepia(.35) saturate(2.2) hue-rotate(4deg) brightness(1.02) drop-shadow(0 0 4px #ffcb3244)}
 .quota-icon[data-lit=false]{background-position:right;filter:grayscale(1) brightness(.6) contrast(1.35)}
-.quota-base{background-image:url('/static/images/space/quota-base-lamp-states-v1.png')}
-.quota-extra{background-image:url('/static/images/space/quota-extra-bulb-states-v1.png')}
+.quota-base{background-image:url('/static/images/space/quota-base-lamp-states-v1-q90.webp')}
+.quota-extra{background-image:url('/static/images/space/quota-extra-bulb-states-v1-q90.webp')}
 .quota-screen-reader{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:650px){.quota-display{position:relative;top:auto;left:auto;justify-content:flex-start;margin-bottom:4px}.quota-icon{width:30px;height:30px}}

@@ -6,7 +6,7 @@ const label=value=>new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',h
 async function welcome(data){
  if(welcoming)return;welcoming=true;
  try{
-  if(await dialog('7일 무료 체험을 시작해요',`가입일을 포함한 7일 동안 슈퍼패스 기능을 이용해요.\n체험 종료: ${label(data.trial_expires_at)} (한국 시간)`,[{label:'다음',value:'next',primary:true}],{dismissible:false})!=='next'||!same())return;
+  if(await dialog(`${data.trial_days??5}일 무료 체험을 시작해요`,`가입일을 포함한 ${data.trial_days??5}일 동안 슈퍼패스 기능을 이용해요.\n체험 종료: ${label(data.trial_expires_at)} (한국 시간)`,[{label:'다음',value:'next',primary:true}],{dismissible:false})!=='next'||!same())return;
   const {settings}=await import('./daily.js?v=20261105-letter-metrics');await settings({waitForClose:true});
   // 시간 저장에 성공했을 때만 다음 방문의 자동 안내를 마친다.
   const preference=await json('/daily/settings');if(same()&&preference.configured)await json('/account/onboarding',{method:'POST'});

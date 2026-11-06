@@ -180,6 +180,7 @@ def schedule_events(background_tasks, user_id, analytics):
 
 class WritingView(Input):
     event: Literal["diary_draft_displayed", "library_entered", "saved_diary_selected", "saved_diary_displayed",
+                   "saved_diary_edit_opened",
                    "library_entered_after_save", "space_entered_after_discard",
                    "space_entered", "space_input_started", "space_left",
                    "diary_prompt_shown", "diary_prompt_resolved"]
@@ -247,7 +248,7 @@ def record_view(data: WritingView, background_tasks: BackgroundTasks,
         background_tasks.add_task(capture_writing_event, data.event, user.id, data.visit_id,
                                   get_kst_now(), visit_id=data.visit_id)
         return
-    if data.diary_id is None or (data.event == "saved_diary_selected" and
+    if data.diary_id is None or (data.event in ("saved_diary_selected", "saved_diary_edit_opened") and
                                 (data.navigation_id is None or data.visit_id is None)):
         raise HTTPException(422)
     diary = execute(service.owned, db, DiaryReport, data.diary_id, user.id)

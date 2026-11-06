@@ -291,9 +291,13 @@ async function renderPhotos(detail){
   catch(failure){if(same()&&failure.status!==401){figure.append(node('figcaption','','사진을 불러오지 못했어요.'));error(failure.message,()=>loadDiary(),'사진 다시 불러오기');}}
  }
 }
-function beginEdit({restore=false}={}){if(busy&&!restore)return;clearError();editing=true;const draft=stored(`edit-${state.diary.id}`);$('edit-title').value=draft?.title??state.diary.title;$('edit-body').value=draft?.body??state.diary.body;
+function beginEdit({restore=false}={}){if((busy&&!restore)||editing||!same())return;clearError();editing=true;const draft=stored(`edit-${state.diary.id}`);$('edit-title').value=draft?.title??state.diary.title;$('edit-body').value=draft?.body??state.diary.body;
  editingVersion=draft?(draft.version||0):state.diary.version;
- $('edit-form').hidden=false;$('diary-title').hidden=true;$('diary-body').hidden=true;updateActions();for(const button of $('photos').querySelectorAll('button'))button.hidden=false;$('edit-title').focus();}
+ $('edit-form').hidden=false;$('diary-title').hidden=true;$('diary-body').hidden=true;updateActions();for(const button of $('photos').querySelectorAll('button'))button.hidden=false;$('edit-title').focus();
+ if(!restore&&detailId&&state.diary.state==='saved'&&libraryNavigation&&libraryVisit){
+  recordWritingView('saved_diary_edit_opened',{diary_id:state.diary.id,navigation_id:libraryNavigation,visit_id:libraryVisit});
+ }
+}
 function rememberEdit(){store(`edit-${state.diary.id}`,{title:$('edit-title').value,body:$('edit-body').value,version:editingVersion});}
 async function applyEdit(event){event?.preventDefault();if(busy)return;const title=$('edit-title').value.trim(),body=$('edit-body').value.trim();if(!title||!body){await dialog('제목과 본문을 입력해 주세요','당신의 이야기가 담길 수 있도록 내용을 남겨주세요.');return;}
  if(!editingVersion){await resolveEditConflict();return;}rememberEdit();clearError();setBusy(true);

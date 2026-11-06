@@ -215,20 +215,46 @@ class WritingFlowTests(unittest.TestCase):
                 {"event": "library_entered_after_save", "visit_id": visit, "diary_id": diary},
                 {"event": "saved_diary_selected", "visit_id": visit, "navigation_id": navigation, "diary_id": diary},
                 {"event": "saved_diary_displayed", "visit_id": visit, "navigation_id": navigation, "diary_id": diary},
+                {"event": "saved_diary_edit_opened", "visit_id": visit, "navigation_id": navigation, "diary_id": diary},
             ):
                 self.assertEqual(self.client.post("/writing/analytics/view", json=view).status_code, 204)
         events = [json.loads(call.args[0].data) for call in transport.call_args_list]
         self.assertEqual([event["event"] for event in events], [
             "story_started", "reply_completed", "diary_draft_created", "diary_first_saved",
             "library_entered", "library_entered_after_save", "saved_diary_selected", "saved_diary_displayed",
+            "saved_diary_edit_opened",
         ])
-        story, reply, draft, save, library, arrival, selected, displayed = (event["properties"] for event in events)
+        story, reply, draft, save, library, arrival, selected, displayed, edit = (event["properties"] for event in events)
         self.assertEqual(len({props["writing_id"] for props in (story, reply, draft, save)}), 1)
         self.assertEqual(len({props["diary_id"] for props in (draft, save, arrival, selected, displayed)}), 1)
         self.assertEqual(len({props["visit_id"] for props in (library, arrival, selected, displayed)}), 1)
         self.assertEqual(selected["navigation_id"], displayed["navigation_id"])
+        for field in ("diary_id", "writing_id", "navigation_id", "visit_id"):
+            self.assertEqual(displayed[field], edit[field])
         self.assertEqual(save["edit_kind"], "none")
         self.assertNotIn("합성", json.dumps(events, ensure_ascii=False))
+
+    def test_saved_edit_event_requires_owned_saved_diary_and_library_context(self):
+        from uuid import uuid4
+        _, diary = self.draft()
+        view = {"event": "saved_diary_edit_opened", "diary_id": diary,
+                "visit_id": str(uuid4()), "navigation_id": str(uuid4())}
+        url = "/writing/analytics/view"
+        with patch.object(api, "capture_writing_event") as capture:
+            self.assertEqual(self.client.post(url, json=view).status_code, 409)
+            self.client.post(f"/writing/diaries/{diary}/save", json={"version": 1})
+            for missing in ("visit_id", "navigation_id", "diary_id"):
+                self.assertEqual(self.client.post(url, json={k:v for k,v in view.items() if k != missing}).status_code, 422)
+            self.owner = 2
+            self.assertEqual(self.client.post(url, json=view).status_code, 404)
+            self.owner = 1
+            self.assertEqual(self.client.post(url, json={**view, "body": "not allowed"}).status_code, 422)
+            capture.assert_not_called()
+            self.assertEqual(self.client.post(url, json=view).status_code, 204)
+            capture.assert_called_once()
+            self.assertEqual(self.client.delete(f"/writing/diaries/{diary}").status_code, 200)
+            self.assertEqual(self.client.post(url, json=view).status_code, 409)
+            capture.assert_called_once()
 
     def test_discard_arrival_links_only_to_the_new_owned_writing(self):
         from uuid import uuid4

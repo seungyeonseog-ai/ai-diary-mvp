@@ -69,9 +69,12 @@ def execute(function, *args, **kwargs):
 
 
 @router.post("")
-def start(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def start(include_state: bool = False, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = execute(service.start_writing, db.get_bind(), user.id)
-    return {"id": row.id, "date": row.source_date, "state": row.state}
+    result = {"id": row.id, "date": row.source_date, "state": row.state}
+    if include_state:
+        result["snapshot"] = current(row.id, db, user)
+    return result
 
 
 @router.get("/diaries")

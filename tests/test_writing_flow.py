@@ -397,6 +397,15 @@ class WritingFlowTests(unittest.TestCase):
         quota = self.client.get(f"/writing/{writing}").json()["quota"]
         self.assertEqual((quota["extra_used"],quota["extra_remaining"]),(1,1))
 
+    def test_start_with_snapshot_matches_read_and_preserves_old_contract(self):
+        old = self.client.post('/writing').json()
+        self.assertEqual(set(old), {'id', 'date', 'state'})
+        self.message(old['id'])
+        new = self.client.post('/writing?include_state=true').json()
+        self.assertEqual(new['id'], old['id'])
+        self.assertEqual(new['snapshot'], self.client.get('/writing/'+old['id']).json())
+        self.assertTrue(new['snapshot']['messages'])
+
     def test_extra_pending_reservation_expiry_and_retry_rechecks_rights(self):
         self.now = datetime(2026,11,6,23,59,50)
         writing = self.start();self.message(writing);self.generate(writing)

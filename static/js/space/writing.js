@@ -171,7 +171,7 @@ function recordDiscardArrival(){
 }
 async function boot(){
  clearTimeout(poll);clearError();setBusy(true);show('loading');
- try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);if(same()){trackSpace('space_entered');recordDiscardArrival();}if(sessionStorage.getItem(`space:${uid}:discard-notice`)){sessionStorage.removeItem(`space:${uid}:discard-notice`);await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}}
+ try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing?include_state=true',{method:'POST'});if(!same())return;state=result.snapshot||await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);if(same()){trackSpace('space_entered');recordDiscardArrival();}if(sessionStorage.getItem(`space:${uid}:discard-notice`)){sessionStorage.removeItem(`space:${uid}:discard-notice`);await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}}
  catch(failure){if(failure.status!==401){if(detailId){show('loading');$('loading-view').querySelector('.soft-spinner').hidden=true;$('loading-view').querySelector('p').textContent='일기를 열지 못했어요.';error(failure.message,failure.status===404?()=>location.assign(backURL):boot,failure.status===404?'서재로 돌아가기':'일기 다시 열기');}else{show('chat');error(failure.message,boot,'공간 다시 열기');}}}
  finally{if(!poll)setBusy(false);}
 }

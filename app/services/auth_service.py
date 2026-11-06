@@ -7,6 +7,7 @@ from app.core.token_utils import encode_token  # JWT 생성 함수
 from datetime import datetime
 from app.models.db.login_log import LoginLog  
 from app.models.schemas.auth_schema import UserCreate
+from app.services.pilot_access import require_access, require_invitation
 
 
 # ✅ 비밀번호 해시 비교 및 생성용 bcrypt 설정 (중복 제거)
@@ -23,6 +24,7 @@ def authenticate_user(db: Session, username: str, password: str):
     user = db.query(User).filter(User.username == username).first()
     if not user or not pwd_context.verify(password, user.hashed_password):
         raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
+    require_access(user)
     db.add(LoginLog(user_id=user.id, login_time=get_kst_now()))
     db.commit()
     token = encode_token(user.id)
@@ -38,6 +40,7 @@ def create_user(db: Session, user: UserCreate):
     - 평문 비밀번호를 해시로 변환
     - User 모델 인스턴스 생성 및 DB 저장
     """
+    require_invitation(user)
     hashed_pw = get_password_hash(user.password)
     db_user = User(
         username=user.username,

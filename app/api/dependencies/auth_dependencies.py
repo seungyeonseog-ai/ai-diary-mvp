@@ -6,6 +6,7 @@ from app.models.schemas.auth_schema import UserInToken
 from app.core.connection import get_db
 from app.models.db.user_model import User
 from jose import JWTError
+from app.services.pilot_access import require_access
 
 # FastAPI가 토큰을 가져오는 방식 지정
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
@@ -18,6 +19,7 @@ def resolve_token_user(token: str, db: Session) -> User:
         user = db.get(User, user_data.user_id)
         if not user:
             raise HTTPException(status_code=401, detail="인증 실패: 유효하지 않은 사용자입니다.")
+        require_access(user)
         return user
     except (JWTError, ValueError):
         raise HTTPException(status_code=401, detail="인증 실패: 유효하지 않은 토큰입니다.")

@@ -93,6 +93,9 @@ services:
       POSTHOG_ID_KEY: ${POSTHOG_ID_KEY:-}
       POSTHOG_TEST_USER_IDS: ${POSTHOG_TEST_USER_IDS:-}
       POSTHOG_PILOT_USER_IDS: ${POSTHOG_PILOT_USER_IDS:-}
+      PILOT_ACCESS_MODE: ${PILOT_ACCESS_MODE:-restricted}
+      PILOT_ALLOWED_USER_IDS: ${PILOT_ALLOWED_USER_IDS:-}
+      PILOT_INVITATIONS: ${PILOT_INVITATIONS:-}
     ports: ["127.0.0.1:${WEB_PORT:-18000}:8000"]
     depends_on:
       redis: {condition: service_healthy}

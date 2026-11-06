@@ -105,7 +105,8 @@ if (document.getElementById("registerForm")) {
       username: formData.get("username"),
       password: formData.get("password"),
       email: formData.get("email"),
-      nickname: formData.get("nickname")
+      nickname: formData.get("nickname"),
+      invite_code: formData.get("invite_code") || null
     };
 
     try {

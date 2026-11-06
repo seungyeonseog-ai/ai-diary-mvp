@@ -113,6 +113,11 @@ class SecurityTests(unittest.TestCase):
     def test_socket_rejects_invalid_token(self):
         self.assert_socket_rejected(1, {'type': 'authenticate', 'token': 'invalid'})
 
+    def test_socket_rejects_valid_but_unapproved_pilot_account(self):
+        with patch.dict(os.environ, {'PILOT_ACCESS_MODE':'restricted',
+                                     'PILOT_ALLOWED_USER_IDS':'', 'PILOT_INVITATIONS':'{}'}):
+            self.assert_socket_rejected(1, {'type': 'authenticate', 'token': encode_token(1)})
+
     def test_socket_rejects_spoofed_user_id(self):
         self.assert_socket_rejected(2, {'type': 'authenticate', 'token': encode_token(1)})
 

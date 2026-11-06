@@ -9,6 +9,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     nickname: str
+    invite_code: str | None = None
 
     @field_validator("password")
     @classmethod

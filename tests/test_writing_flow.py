@@ -212,6 +212,7 @@ class WritingFlowTests(unittest.TestCase):
             visit, navigation = str(uuid4()), str(uuid4())
             for view in (
                 {"event": "library_entered", "visit_id": visit},
+                {"event": "library_entered_after_save", "visit_id": visit, "diary_id": diary},
                 {"event": "saved_diary_selected", "visit_id": visit, "navigation_id": navigation, "diary_id": diary},
                 {"event": "saved_diary_displayed", "visit_id": visit, "navigation_id": navigation, "diary_id": diary},
             ):
@@ -219,15 +220,42 @@ class WritingFlowTests(unittest.TestCase):
         events = [json.loads(call.args[0].data) for call in transport.call_args_list]
         self.assertEqual([event["event"] for event in events], [
             "story_started", "reply_completed", "diary_draft_created", "diary_first_saved",
-            "library_entered", "saved_diary_selected", "saved_diary_displayed",
+            "library_entered", "library_entered_after_save", "saved_diary_selected", "saved_diary_displayed",
         ])
-        story, reply, draft, save, library, selected, displayed = (event["properties"] for event in events)
+        story, reply, draft, save, library, arrival, selected, displayed = (event["properties"] for event in events)
         self.assertEqual(len({props["writing_id"] for props in (story, reply, draft, save)}), 1)
-        self.assertEqual(len({props["diary_id"] for props in (draft, save, selected, displayed)}), 1)
-        self.assertEqual(len({props["visit_id"] for props in (library, selected, displayed)}), 1)
+        self.assertEqual(len({props["diary_id"] for props in (draft, save, arrival, selected, displayed)}), 1)
+        self.assertEqual(len({props["visit_id"] for props in (library, arrival, selected, displayed)}), 1)
         self.assertEqual(selected["navigation_id"], displayed["navigation_id"])
         self.assertEqual(save["edit_kind"], "none")
         self.assertNotIn("합성", json.dumps(events, ensure_ascii=False))
+
+    def test_discard_arrival_links_only_to_the_new_owned_writing(self):
+        from uuid import uuid4
+        settings = {"POSTHOG_ENVIRONMENT": "validation", "POSTHOG_ID_KEY": "test-key",
+                    "POSTHOG_HOST": "https://us.i.posthog.com", "POSTHOG_PROJECT_TOKEN": "test-token"}
+        with patch.dict(os.environ, settings), patch.object(posthog_capture, "urlopen") as transport:
+            first, diary = self.draft()
+            self.assertEqual(self.client.delete(f"/writing/diaries/{diary}").status_code, 200)
+            self.now += timedelta(seconds=1)
+            second = self.start()
+            url = "/writing/analytics/view"
+            arrival = {"event": "space_entered_after_discard", "diary_id": diary, "visit_id": str(uuid4())}
+            self.assertEqual(self.client.post(url, json={**arrival, "writing_id": first}).status_code, 409)
+            self.owner = 2
+            foreign = self.start()
+            self.assertEqual(self.client.post(url, json=arrival).status_code, 404)
+            self.owner = 1
+            self.assertEqual(self.client.post(url, json={**arrival, "writing_id": foreign}).status_code, 404)
+            self.assertEqual(self.client.post(url, json={**arrival, "writing_id": second}).status_code, 204)
+            self.message(second)
+        events = [json.loads(call.args[0].data) for call in transport.call_args_list]
+        discard, arrived, story = events[-3:]
+        self.assertEqual([event["event"] for event in (discard, arrived, story)],
+                         ["diary_draft_discarded", "space_entered_after_discard", "story_started"])
+        self.assertEqual(discard["properties"]["diary_id"], arrived["properties"]["diary_id"])
+        self.assertEqual(arrived["properties"]["writing_id"], story["properties"]["writing_id"])
+        self.assertNotEqual(discard["properties"]["writing_id"], story["properties"]["writing_id"])
 
     def test_discard_a_new_b_diary_only_b_day_source_a_and_b(self):
         first, diary_id = self.draft()

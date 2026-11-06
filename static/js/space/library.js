@@ -40,8 +40,18 @@ async function load(next=null,push=false){
   const data=wanted.view==='shelf'?(initial&&wanted.page===1?initial:await json(`/library-data/shelf?page=${wanted.page}`,{signal})):await json(`/library-data/month?month=${wanted.month}&page=${wanted.page}`,{signal});
   if(!same()||requestSequence!==sequence)return;
   today=data.server_date;state={...wanted,page:data.page};
+  const afterSave=location.hash==='#after-save';
   const url=libraryURL(state);if(push)history.pushState(null,'',url);else history.replaceState(null,'',url);
+  let savedDiaryId=null;
+  if(!libraryRecorded&&state.view==='shelf'){
+   try{
+    const key=`space:${uid}:save-arrival`;
+    if(afterSave)savedDiaryId=Number(sessionStorage.getItem(key));
+    sessionStorage.removeItem(key);
+   }catch{}
+  }
   if(state.view==='shelf'){renderShelf(data);void loadCards();}else renderMonth(data);
+  if(savedDiaryId>0)recordWritingView('library_entered_after_save',{diary_id:savedDiaryId,visit_id:libraryVisit});
   if(!libraryRecorded){libraryRecorded=true;recordWritingView('library_entered',{visit_id:libraryVisit});}
  }catch(error){if(error.name!=='AbortError'&&error.status!==401&&same()&&requestSequence===sequence)fail(error.message,()=>load(wanted));}
  finally{if(requestSequence===sequence){$('library-loading').hidden=true;$('library-workspace').setAttribute('aria-busy','false');}}

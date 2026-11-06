@@ -17,8 +17,11 @@ function scheduleDiaryPrompt(text){
 }
 function openCompletedDiary(){trackFollowup('open_diary');cancelDiaryPrompt();leaving=true;location.assign(`/diary/${state.diary.id}?return=${encodeURIComponent(backURL)}`);}
 function goToLibrary(highlight=false){
- if(highlight)try{sessionStorage.setItem(`space:${uid}:saved-book`,String(state.diary.id));}catch{}
- leaving=true;location.assign('/library');
+ if(highlight)try{
+  sessionStorage.setItem(`space:${uid}:saved-book`,String(state.diary.id));
+  sessionStorage.setItem(`space:${uid}:save-arrival`,String(state.diary.id));
+ }catch{}
+ leaving=true;location.assign(highlight?'/library#after-save':'/library');
 }
 const detailId=$('workspace').dataset.diaryId||null;
 const requestedBack=safeNext(new URLSearchParams(location.search).get('return')||'/library','/library');
@@ -136,9 +139,23 @@ function renderChat(){
 }
 function resizeInput(){const input=$('message-input');input.style.height='auto';input.style.height=Math.min(input.scrollHeight,140)+'px';}
 async function fetchState(){if(detailId){const result=await json(`/writing/diaries/${detailId}`);if(same())state.diary=result;return;}const result=await json(`/writing/${state.id}`);if(!same())return;state=result;}
+function rememberDiscardArrival(diaryId,date){
+ try{sessionStorage.setItem(`space:${uid}:discard-arrival`,JSON.stringify({diaryId,date}));}catch{}
+}
+function recordDiscardArrival(){
+ try{
+  const key=`space:${uid}:discard-arrival`;
+  const arrival=JSON.parse(sessionStorage.getItem(key));
+  sessionStorage.removeItem(key);
+  if(location.hash!=='#after-discard'||!arrival)return;
+  history.replaceState(history.state,'',location.pathname+location.search);
+  recordWritingView('space_entered_after_discard',{diary_id:arrival.diaryId,visit_id:id(),
+   ...(state.date===arrival.date?{writing_id:state.id}:{})});
+ }catch{}
+}
 async function boot(){
  clearTimeout(poll);clearError();setBusy(true);show('loading');
- try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);if(sessionStorage.getItem(`space:${uid}:discard-notice`)){sessionStorage.removeItem(`space:${uid}:discard-notice`);await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}}
+ try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);if(same())recordDiscardArrival();if(sessionStorage.getItem(`space:${uid}:discard-notice`)){sessionStorage.removeItem(`space:${uid}:discard-notice`);await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}}
  catch(failure){if(failure.status!==401){if(detailId){show('loading');$('loading-view').querySelector('.soft-spinner').hidden=true;$('loading-view').querySelector('p').textContent='일기를 열지 못했어요.';error(failure.message,failure.status===404?()=>location.assign(backURL):boot,failure.status===404?'서재로 돌아가기':'일기 다시 열기');}else{show('chat');error(failure.message,boot,'공간 다시 열기');}}}
  finally{if(!poll)setBusy(false);}
 }
@@ -275,7 +292,7 @@ async function resolveEditConflict(){
 }
 async function saveDiary(){if(busy||editing)return;clearError();setBusy(true);try{state.diary=await json(`/writing/diaries/${state.diary.id}/save`,{method:'POST',data:{version:state.diary.version}});if(!same())return;goToLibrary(true);}catch(failure){if(failure.status!==401)error(failure.message,saveDiary,'저장 다시 시도');}finally{setBusy(false);}}
 async function discardDiary(){if(busy)return;let latest;try{latest=await json(`/writing/diaries/${state.diary.id}`);}catch(failure){error(failure.message,discardDiary);return;}const today=latest.date===latest.server_date;const answer=await confirm('이 일기를 폐기할까요?',today?'폐기한 일기는 서재에서 사라져요. 오늘은 새 이야기로 다시 작성할 수 있어요.':'폐기한 일기는 서재에서 사라져요. 과거 날짜의 일기는 다시 작성할 수 없어요.','폐기하기','계속 간직하기');if(answer!=='ok')return;clearError();setBusy(true);
- try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;clearLocal();if(result.can_rewrite_today)try{sessionStorage.setItem(`space:${uid}:discard-notice`,'1');}catch{}leaving=true;location.assign('/space');}
+ try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;rememberDiscardArrival(state.diary.id,result.date);clearLocal();if(result.can_rewrite_today)try{sessionStorage.setItem(`space:${uid}:discard-notice`,'1');}catch{}leaving=true;location.assign('/space#after-discard');}
  catch(failure){if(failure.status!==401)error(failure.message,discardDiary,'폐기 다시 시도');}finally{setBusy(false);}}
 
 function renderPhotoErrors(){
@@ -340,9 +357,10 @@ async function allowLeave(){
   if(answer==='discard'&&same()&&!busy){
    clearError();setBusy(true);
    try{
-    await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});
+    const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});
     if(!same())return false;
-    clearLocal();editing=false;state.diary.state='discarded';leaving=true;location.assign('/space');return false;
+    rememberDiscardArrival(state.diary.id,result.date);
+    clearLocal();editing=false;state.diary.state='discarded';leaving=true;location.assign('/space#after-discard');return false;
    }catch(failure){if(same()&&failure.status!==401)error(failure.message);return false;}
    finally{setBusy(false);}
   }

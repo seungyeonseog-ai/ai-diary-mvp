@@ -179,15 +179,40 @@ def schedule_events(background_tasks, user_id, analytics):
 
 
 class WritingView(Input):
-    event: Literal["diary_draft_displayed", "library_entered", "saved_diary_selected", "saved_diary_displayed"]
+    event: Literal["diary_draft_displayed", "library_entered", "saved_diary_selected", "saved_diary_displayed",
+                   "library_entered_after_save", "space_entered_after_discard"]
     diary_id: int | None = Field(default=None, strict=True, gt=0)
     navigation_id: UUID | None = None
     visit_id: UUID | None = None
+    writing_id: UUID | None = None
 
 
 @router.post("/analytics/view", status_code=204)
 def record_view(data: WritingView, background_tasks: BackgroundTasks,
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if data.event in ("library_entered_after_save", "space_entered_after_discard"):
+        if data.diary_id is None or data.navigation_id is not None or data.visit_id is None:
+            raise HTTPException(422)
+        diary = execute(service.owned, db, DiaryReport, data.diary_id, user.id)
+        now = get_kst_now()
+        writing = None
+        if data.event == "library_entered_after_save":
+            if data.writing_id is not None or diary.state != "saved":
+                raise HTTPException(409)
+        else:
+            if diary.state != "discarded":
+                raise HTTPException(409)
+            if data.writing_id is not None:
+                writing = execute(service.owned, db, Writing, str(data.writing_id), user.id)
+                if (writing.state != "active" or writing.source_date != diary.timestamp.date().isoformat()
+                        or writing.created_at < diary.updated_at):
+                    raise HTTPException(409)
+        background_tasks.add_task(capture_writing_event, data.event, user.id, diary.diary_id, now,
+                                  diary_id=diary.diary_id, visit_id=data.visit_id,
+                                  writing_id=writing.id if writing else None)
+        return
+    if data.writing_id is not None:
+        raise HTTPException(422)
     if data.event == "library_entered":
         if data.diary_id is not None or data.visit_id is None or data.navigation_id is not None:
             raise HTTPException(422)

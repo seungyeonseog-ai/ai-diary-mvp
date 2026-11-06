@@ -1,6 +1,6 @@
 {% extends "ui_base.html" %}{% block title %}서재 · 나의 공간{% endblock %}
 {% block body_class %}space-page library-page{% endblock %}
-{% block head %}<link rel="stylesheet" href="/static/css/library.css?v=20261105-ui9">{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/css/library.css?v=20261106-covers">{% endblock %}
 {% block content %}{% include "space_sidebar.html" %}
 <main id="library-workspace" class="workspace library-workspace{% if request.query_params.get("view") in ["calendar","list"] %} more-workspace{% endif %}" aria-busy="true">
 <header id="library-hero" class="library-hero"{% if request.query_params.get("view") in ["calendar","list"] %} hidden{% endif %}><h1>서재</h1><p>당신의 소중한 이야기들이<br>차곡차곡 모여 있는 공간이에요.</p></header>
@@ -22,4 +22,4 @@
 </main>
 
 {% endblock %}
-{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261106-arrival"></script>{% endblock %}
+{% block scripts %}<script src="/static/js/study_state.js"></script><script type="module" src="/static/js/space/library.js?v=20261106-covers"></script>{% endblock %}

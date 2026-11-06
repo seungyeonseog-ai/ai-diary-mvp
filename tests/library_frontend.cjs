@@ -14,7 +14,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
  const signed=m.emotionPoints({diary_analyses:[{date_str:'2025-08-08',scores:[-.5,-.3,-.2]},{date_str:'2025-08-11',scores:[.5,.3,.2]}]});
  assert.equal(signed[0].value,-1);const scale=m.chartScale(signed);assert.ok(scale.y(-1)>scale.y(0));assert.ok(scale.y(1)<scale.y(0));assert.equal(scale.y(0),80);
  assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2025-08-08',scores:[-1.1]}]}));assert.throws(()=>m.emotionPoints({diary_analyses:[{date_str:'2025-08-08',scores:[NaN]}]}));
- assert.equal(m.coverURL(9),'/static/images/space/book-cover-cocoa-v1.png');
+ assert.equal(m.coverURL(9),'/static/images/space/book-cover-cocoa-v1-q90.webp');
  const ui=new vm.SourceTextModule(fs.readFileSync('static/js/space/ui.js','utf8'),{context});await ui.link(()=>{});await ui.evaluate();const safe=ui.namespace.safeNext;
  assert.equal(safe('//example.org/diary/1'),'/space');assert.equal(safe('javascript:alert(1)'),'/space');assert.equal(safe('/diary/0'),'/space');assert.equal(safe('/library?view=list'),'/library?view=list');assert.equal(safe('/diary/12?return=x'),'/diary/12?return=x');
  console.log('PASS library: calendar leap/century/year1, month boundary, paging validation, return URL, real-date chart, strict numeric scores, safe login redirect');

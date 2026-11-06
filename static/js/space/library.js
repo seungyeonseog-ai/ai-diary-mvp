@@ -1,6 +1,6 @@
 import {$,node,id,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261104-ui2';
 import {recordWritingView,recordWeeklyView} from './writing_analytics.js?v=20261105-weekly-metrics';
-import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261103-7c';
+import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261106-covers';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 const cover=coverURL;
 let libraryRecorded=false;
@@ -63,7 +63,7 @@ function renderShelf(data){
  shelfBooks(data.books).forEach((book,index)=>{
   if(book.state==='empty'){$('books').append(node('div','book empty','기록이 채워질 자리'));return;}
   const element=node(book.state==='saved'?'a':'button','book '+book.state+(book.state==='saved'&&Number(book.id)%5===4?' dark-cover':''));if(book.state==='saved')linkDiary(element,book.id);
-  const image=node('img');image.src=book.state==='saved'?cover(book.id):'/static/images/space/book-cover-cocoa-v1.png';image.alt='';
+  const image=node('img');image.decoding='async';image.src=book.state==='saved'?cover(book.id):cover(4);image.alt='';
   const copy=node('span','book-copy');
   if(book.state==='saved'){copy.append(node('span','book-title',book.title),node('span','book-date',dateLabel(book.date)));element.title=book.title;}
   else{copy.append(lockIcon(),node('span','book-date',dateLabel(book.date)));element.setAttribute('aria-label',`${book.date} 미래의 기록`);element.addEventListener('click',()=>dialog('아직 오지 않은 날이에요','그날의 이야기를 차근차근 채워보세요.'));}

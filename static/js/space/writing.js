@@ -16,6 +16,13 @@ function scheduleDiaryPrompt(text){
  },replyReadingDelay(text));
 }
 function openCompletedDiary(){trackFollowup('open_diary');cancelDiaryPrompt();leaving=true;location.assign(`/diary/${state.diary.id}?return=${encodeURIComponent(backURL)}`);}
+function goHomeAfterDiscard(){
+ // 같은 /space 문서에서는 hash 이동만으로 boot가 재실행되지 않는다.
+ if(location.pathname==='/space'){
+  history.replaceState(null,'','/space#after-discard');
+  location.reload();
+ }else location.assign('/space#after-discard');
+}
 function goToLibrary(highlight=false){
  if(highlight)try{
   sessionStorage.setItem(`space:${uid}:saved-book`,String(state.diary.id));
@@ -313,7 +320,7 @@ async function resolveEditConflict(){
 }
 async function saveDiary(){if(busy||editing)return;clearError();setBusy(true);try{state.diary=await json(`/writing/diaries/${state.diary.id}/save`,{method:'POST',data:{version:state.diary.version}});if(!same())return;goToLibrary(true);}catch(failure){if(failure.status!==401)error(failure.message,saveDiary,'저장 다시 시도');}finally{setBusy(false);}}
 async function discardDiary(){if(busy)return;let latest;try{latest=await json(`/writing/diaries/${state.diary.id}`);}catch(failure){error(failure.message,discardDiary);return;}const today=latest.date===latest.server_date;const answer=await confirm('이 일기를 폐기할까요?',today?'폐기한 일기는 서재에서 사라져요. 오늘은 새 이야기로 다시 작성할 수 있어요.':'폐기한 일기는 서재에서 사라져요. 과거 날짜의 일기는 다시 작성할 수 없어요.','폐기하기','계속 간직하기');if(answer!=='ok')return;clearError();setBusy(true);
- try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;rememberDiscardArrival(state.diary.id,result.date);clearLocal();if(result.can_rewrite_today)try{sessionStorage.setItem(`space:${uid}:discard-notice`,'1');}catch{}leaving=true;location.assign('/space#after-discard');}
+ try{const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});if(!same())return;rememberDiscardArrival(state.diary.id,result.date);clearLocal();if(result.can_rewrite_today)try{sessionStorage.setItem(`space:${uid}:discard-notice`,'1');}catch{}leaving=true;goHomeAfterDiscard();}
  catch(failure){if(failure.status!==401)error(failure.message,discardDiary,'폐기 다시 시도');}finally{setBusy(false);}}
 
 function renderPhotoErrors(){
@@ -381,7 +388,7 @@ async function allowLeave(){
     const result=await json(`/writing/diaries/${state.diary.id}`,{method:'DELETE'});
     if(!same())return false;
     rememberDiscardArrival(state.diary.id,result.date);
-    clearLocal();editing=false;state.diary.state='discarded';leaving=true;location.assign('/space#after-discard');return false;
+    clearLocal();editing=false;state.diary.state='discarded';leaving=true;goHomeAfterDiscard();return false;
    }catch(failure){if(same()&&failure.status!==401)error(failure.message);return false;}
    finally{setBusy(false);}
   }

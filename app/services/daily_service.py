@@ -13,6 +13,7 @@ from app.models.db.study_model import EncouragementReport, WeeklyAnalysisReport
 from app.services.writing_service import transaction, day_messages, WritingError, owned, format_users
 from app.utils.time_utils import get_kst_now
 from app.services.access_service import permits
+from app.services.posthog_capture import capture_writing_event
 
 
 def preference(db, uid, now):
@@ -196,6 +197,7 @@ def run_job(bind,key,generate=None,search=None,index=None,now=None):
                     job.letter_result=result
                 # API 중 자정 통과도 생성시각이 아닌 저장 직전 실제시각으로 차단한다.
                 save_now = now if fixed_clock else get_kst_now()
+                delivered_id=None
                 if save_now.date().isoformat()==job.source_date:
                     with transaction(bind,uid) as db:
                         live=db.get(DailyJob,key)
@@ -210,7 +212,10 @@ def run_job(bind,key,generate=None,search=None,index=None,now=None):
                             db.add(LetterDelivery(id=report.encouragement_id,user_id=uid,source_date=job.source_date,
                                 saved=False,discarded=False,archive_deleted=False))
                             db.add(ResultNotice(user_id=uid,kind='letter',result_id=report.encouragement_id,created_at=save_now))
+                            delivered_id=report.encouragement_id
                         live.letter_done=True
+                    if delivered_id is not None:
+                        capture_writing_event('letter_available',uid,delivered_id,save_now,letter_id=delivered_id)
                 else:
                     checkpoint(bind,uid,key,lease,letter_done=True)
                 job.letter_done=True

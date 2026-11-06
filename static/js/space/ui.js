@@ -20,7 +20,7 @@ function ensureDialog(){
  const title=node('h2'),description=node('p'),choices=node('div','dialog-choices');title.id='dialog-title';description.id='dialog-description';choices.id='dialog-choices';
  form.append(close,node('div','dialog-emblem','✦'),title,description,choices);el.append(form);document.body.append(el);return el;
 }
-export function dialog(title,description,choices=[{label:'확인',value:'ok',primary:true}],{dismissible=true}={}){
+export function dialog(title,description,choices=[{label:'확인',value:'ok',primary:true}],{dismissible=true,onShown}={}){
  const result=dialogQueue.then(()=>new Promise(resolve=>{
   const el=ensureDialog();$('dialog-title').textContent=title;$('dialog-description').textContent=description;$('dialog-choices').replaceChildren();
   $('dialog-description').hidden=!description;
@@ -29,7 +29,7 @@ export function dialog(title,description,choices=[{label:'확인',value:'ok',pri
   const preventCancel=event=>{if(!dismissible)event.preventDefault();};el.addEventListener('cancel',preventCancel);
   const preventEscape=event=>{if(!dismissible&&event.key==='Escape')event.preventDefault();};el.addEventListener('keydown',preventEscape);
   for(const choice of choices){if(choice.label==='닫기')continue;const button=node('button',choice.primary?'primary':'secondary',choice.label);button.value=choice.value;button.type='submit';$('dialog-choices').append(button);}
-  el.returnValue='';el.addEventListener('close',()=>{el.removeEventListener('cancel',preventCancel);el.removeEventListener('keydown',preventEscape);resolve(el.returnValue||'cancel');},{once:true});el.showModal();
+  el.returnValue='';el.addEventListener('close',()=>{el.removeEventListener('cancel',preventCancel);el.removeEventListener('keydown',preventEscape);resolve(el.returnValue||'cancel');},{once:true});el.showModal();onShown?.();
  }));dialogQueue=result.catch(()=>{});return result;
 }
 export const confirm = (title,description,yes='확인',no='취소') => dialog(title,description,[{label:no,value:'cancel'},{label:yes,value:'ok',primary:true}]);

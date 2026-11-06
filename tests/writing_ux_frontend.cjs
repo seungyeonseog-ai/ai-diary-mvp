@@ -33,7 +33,7 @@ class El{
  const exported={$ ,node:(tag,cls='',text='')=>Object.assign(new El(),{tag,className:cls,textContent:text}),id:()=>String(++seq),token:()=>identity,owner:()=>identity,json,
   request:async()=>({blob:async()=>({}),headers:{get:key=>key==='X-Writing-Operation'?operationHeader:null}}),
   readSSE:async(_response,onBubble,valid)=>{assert(valid());onBubble('합성 첫 답변',0);onBubble('합성 두 번째 답변',1);},
-  dialog:async(...a)=>{dialogs.push(a);return answer},confirm:async(...a)=>{dialogs.push(a);return answer},toast:()=>{},logout:()=>{},expire:()=>{},safeNext:x=>x};
+  dialog:async(...a)=>{dialogs.push(a);a[3]?.onShown?.();return answer},confirm:async(...a)=>{dialogs.push(a);return answer},toast:()=>{},logout:()=>{},expire:()=>{},safeNext:x=>x};
  const stub=new vm.SyntheticModule(Object.keys(exported),function(){for(const[k,v]of Object.entries(exported))this.setExport(k,v)},{context});
  const policy=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_policy.js','utf8'),{context});await policy.link(()=>{});await policy.evaluate();
  const analytics=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_analytics.js','utf8'),{context});await analytics.link(()=>stub);
@@ -59,13 +59,13 @@ class El{
  assert.deepEqual(JSON.parse(JSON.stringify(dialogs.at(-1)[2])),[{label:'저장하기',value:'save',primary:true},{label:'폐기하기',value:'discard'}]);
  assert.notEqual(dialogs.at(-1)[3]?.dismissible,false);
  answer='save';failSave=true;assert.equal(await m.allowLeave(),false);assert.equal($('error-panel').hidden,false);assert.equal($('edit-body').value,'편집 중 본문');failSave=false;
- assert.equal(await m.allowLeave(),false);assert.equal(diary.state,'saved');assert.equal(diary.title,'편집 중 제목');assert.equal(navigation.at(-1),'/library');assert.equal(storage.get('space:a:saved-book'),'1');
+ assert.equal(await m.allowLeave(),false);assert.equal(diary.state,'saved');assert.equal(diary.title,'편집 중 제목');assert.equal(navigation.at(-1),'/library#after-save');assert.equal(storage.get('space:a:saved-book'),'1');
  await m.loadDiary();m.beginEdit({});
  await m.applyEdit();assert.equal(diary.title,'편집 중 제목');assert.equal(diary.body,'편집 중 본문');assert.equal(diary.state,'saved');assert.equal(diary.photos.length,3);assert.equal(navigation.at(-1),'/library');
  await m.loadDiary();assert.equal($('save-diary').hidden,true);assert.equal($('add-photo').hidden,true);assert.equal($('edit-diary').hidden,false);
  assert.equal(await m.allowLeave(),true);
  const saved=copy();diary.state='draft';m.fixture(copy());answer='discard';
- assert.equal(await m.allowLeave(),false);assert.equal(diary.state,'discarded');assert.equal(navigation.at(-1),'/space');
+ assert.equal(await m.allowLeave(),false);assert.equal(diary.state,'discarded');assert.equal(navigation.at(-1),'/space#after-discard');
  assert.equal(calls.at(-1)[1].method,'DELETE');diary=saved;m.fixture(copy());
  await m.restore(true);assert.equal($('workspace').dataset.view,'chat');assert.equal($('diary-view').hidden,true);assert.equal($('make-diary').hidden,true);
  await m.restore();assert.equal($('workspace').dataset.view,'chat');
@@ -86,11 +86,17 @@ class El{
  m.fixture(copy(),{base_remaining:0,extra_remaining:1});$('message-input').value='아직 더 쓸 이야기';answer='more';const beforeMore=calls.length;
  await m.requestLampReply();assert.equal($('message-input').value,'아직 더 쓸 이야기');assert.equal(calls.length,beforeMore);assert.equal(dialogs.at(-1)[2][0].label,'다 말했어요, 답변받을래요');assert.equal(dialogs.at(-1)[2][1].label,'더 말할래요');
  m.fixture({...copy(),state:'draft'});m.updateActions();assert.equal($('make-diary').hidden,false);assert.equal($('make-diary').textContent,'작성 중인 일기 열기');
- m.fixture(null,{base_remaining:0,extra_remaining:0,features:[]},[{kind:'lamp',state:'succeeded',request_id:'reply-1'}]);
+ m.fixture(null,{base_remaining:0,extra_remaining:0,features:[]},[{id:'op-1',kind:'lamp',state:'succeeded',request_id:'reply-1'}]);
  $('message-input').value='';storage.set('space:a:test:diary-prompt','"reply-1"');m.updateActions();
  assert.equal($('make-diary').hidden,true);assert.equal($('lamp-submit').disabled,false);
- answer='more';const beforeDiaryPrompt=calls.length;await m.requestLampReply();
+ answer='continue';const beforeDiaryPrompt=calls.length;await m.requestLampReply();
  assert.equal(dialogs.at(-1)[0],'이 이야기로 일기를 만들까요?');assert.equal(calls.length,beforeDiaryPrompt);
+ const [promptShown,promptResolved]=analyticsCalls.slice(-2).map(([,event])=>event);
+ assert.equal(promptShown.event,'diary_prompt_shown');
+ assert.equal(promptResolved.event,'diary_prompt_resolved');
+ assert.equal(promptResolved.navigation_id,promptShown.navigation_id);
+ assert.equal(promptResolved.operation_id,'op-1');
+ assert.equal(promptResolved.outcome,'continue');
  assert.equal(policy.namespace.replyReadingDelay('짧음'),5000);assert.equal(policy.namespace.replyReadingDelay('가'.repeat(1000)),15000);
  m.fixture(null);m.scheduleDiaryPrompt('답변');assert.equal(timers.size,1);m.cancelDiaryPrompt();assert.equal(timers.size,0);
  m.fixture(null);$('workspace').dataset.view='chat';$('message-input').value='날짜가 바뀌어도 보존할 입력';
@@ -106,9 +112,9 @@ class El{
  operationHeader=null;
  await m.sendLamp('extra-request');
  const replyEvents=analyticsCalls.slice(priorAnalytics).map(([,event])=>event);
- assert.deepEqual(replyEvents.map(event=>event.event),['reply_first_displayed','extra_reply_available','reply_completion_displayed','reply_followup']);
- assert.equal(replyEvents[2].diary_state,'saved');assert.equal(replyEvents[3].action,'story_input');
- assert.equal(replyEvents[0].attempt_id,replyEvents[3].attempt_id);
+ assert.deepEqual(replyEvents.map(event=>event.event),['reply_first_displayed','extra_reply_available','reply_completion_displayed','space_input_started','reply_followup']);
+ assert.equal(replyEvents[2].diary_state,'saved');assert.equal(replyEvents[4].action,'story_input');
+ assert.equal(replyEvents[0].attempt_id,replyEvents[4].attempt_id);
  clockState=null;m.scheduleDiaryPrompt('답변');const beforeIdentityChange=dialogs.length;identity='b';await [...timers.values()][0]();assert.equal(dialogs.length,beforeIdentityChange);
  console.log('PASS writing UX: photo limit persistence/reset, editing text/version preservation, cancel, saved detail navigation, reading timer cancellation and account guard');
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -4,7 +4,7 @@ const recorded = new Set();
 
 export function recordWritingView(event, fields) {
   recordWritingSignal('/writing/analytics/view', event, fields,
-    fields.diary_id ?? '', fields.navigation_id ?? fields.visit_id ?? '');
+    fields.diary_id ?? fields.writing_id ?? '', fields.navigation_id ?? fields.visit_id ?? '');
 }
 
 export function recordExtraOpportunity(writingId, day) {

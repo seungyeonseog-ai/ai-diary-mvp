@@ -1,6 +1,6 @@
-import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261104-ui2';
+import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261106-prompt';
 import {replyReadingDelay,PHOTO_LIMIT} from './writing_policy.js?v=20261103-8a';
-import {recordExtraOpportunity,recordReplyObservation,recordWritingView} from './writing_analytics.js?v=20261105-h2';
+import {recordExtraOpportunity,recordReplyObservation,recordWritingView} from './writing_analytics.js?v=20261106-journey';
 const libraryParams = new URLSearchParams(location.search);
 const libraryNavigation = libraryParams.get('navigation');
 const libraryVisit = libraryParams.get('visit');
@@ -67,6 +67,15 @@ function unsubmitted(){const submitted=new Set(ops().filter(o=>o.kind==='lamp').
 function latestReply(){return ops().findLast(op=>op.kind==='lamp'&&op.state==='succeeded');}
 function success(){return Boolean(latestReply());}
 let observedReply=null;
+let spaceVisit=id(),activeDiaryPrompt=null;
+function trackSpace(event){
+ if(!detailId&&same()&&state?.id)recordWritingView(event,{writing_id:state.id,visit_id:spaceVisit});
+}
+function resolveDiaryPrompt(prompt,outcome){
+ if(!prompt||activeDiaryPrompt!==prompt)return;
+ activeDiaryPrompt=null;
+ if(same())recordWritingView('diary_prompt_resolved',{...prompt,outcome});
+}
 function trackReply(reply,event,startedAt,extra={}){
  if(!reply?.operation_id||!same())return;
  const elapsed_ms=Math.min(86_400_000,Math.max(0,Math.round(performance.now()-startedAt)));
@@ -149,13 +158,13 @@ function recordDiscardArrival(){
   sessionStorage.removeItem(key);
   if(location.hash!=='#after-discard'||!arrival)return;
   history.replaceState(history.state,'',location.pathname+location.search);
-  recordWritingView('space_entered_after_discard',{diary_id:arrival.diaryId,visit_id:id(),
+  recordWritingView('space_entered_after_discard',{diary_id:arrival.diaryId,visit_id:spaceVisit,
    ...(state.date===arrival.date?{writing_id:state.id}:{})});
  }catch{}
 }
 async function boot(){
  clearTimeout(poll);clearError();setBusy(true);show('loading');
- try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);if(same())recordDiscardArrival();if(sessionStorage.getItem(`space:${uid}:discard-notice`)){sessionStorage.removeItem(`space:${uid}:discard-notice`);await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}}
+ try{if(detailId){state={id:`diary-${detailId}`,diary:{id:detailId},operations:[],messages:[]};await loadDiary();return;}const result=await json('/writing',{method:'POST'});if(!same())return;state=await json(`/writing/${result.id}`);if(!same())return;await restoreDayComposer();await restore(true);if(same()){trackSpace('space_entered');recordDiscardArrival();}if(sessionStorage.getItem(`space:${uid}:discard-notice`)){sessionStorage.removeItem(`space:${uid}:discard-notice`);await dialog('새 이야기를 시작할 수 있어요','일기와 오늘 대화가 화면에서 사라졌어요. 기본 대화 1회는 다시 사용할 수 있고, 오늘 사용한 추가 횟수는 그대로예요.');}}
  catch(failure){if(failure.status!==401){if(detailId){show('loading');$('loading-view').querySelector('.soft-spinner').hidden=true;$('loading-view').querySelector('p').textContent='일기를 열지 못했어요.';error(failure.message,failure.status===404?()=>location.assign(backURL):boot,failure.status===404?'서재로 돌아가기':'일기 다시 열기');}else{show('chat');error(failure.message,boot,'공간 다시 열기');}}}
  finally{if(!poll)setBusy(false);}
 }
@@ -204,7 +213,15 @@ async function askDiary(){
  if(busy||!same())return;
  const reply=latestReply();if(reply)store('diary-prompt',reply.request_id);
  updateActions();
- const answer=await confirm('이 이야기로 일기를 만들까요?','오늘 나눈 이야기를 당신의 말로 차근차근 정리할게요.','일기 만들기','더 이야기할래요');
+ const prompt=reply?{writing_id:state.id,operation_id:reply.id,visit_id:spaceVisit,navigation_id:id()}:null;
+ const answer=await dialog('이 이야기로 일기를 만들까요?','오늘 나눈 이야기를 당신의 말로 차근차근 정리할게요.',[
+  {label:'더 이야기할래요',value:'continue'},{label:'일기 만들기',value:'ok',primary:true}
+ ],{onShown:()=>{
+  if(!prompt||!same()||state?.id!==prompt.writing_id)return;
+  activeDiaryPrompt=prompt;
+  recordWritingView('diary_prompt_shown',prompt);
+ }});
+ resolveDiaryPrompt(prompt,answer==='ok'?'generate':answer==='continue'?'continue':'dismiss');
  if(answer==='ok')await generateDiary();else $('message-input').focus();
 }
 async function sendLamp(requestId){
@@ -318,7 +335,7 @@ async function uploadPhotos(entries){if(busy)return;clearError();setBusy(true);f
 async function removePhoto(photoId){if(busy)return;const answer=await confirm('이 사진을 삭제할까요?','일기 본문과 다른 사진은 그대로 남아 있어요.','사진 삭제','취소');if(answer!=='ok')return;setBusy(true);try{const result=await json(`/writing/diaries/${state.diary.id}/photos/${photoId}`,{method:'DELETE',data:{version:state.diary.version}});await reloadPhotosAfterWrite(result.version);}catch(failure){if(failure.status!==401)error(failure.message,()=>removePhoto(photoId),'사진 삭제 다시 시도');}finally{setBusy(false);}}
 
 $('composer').addEventListener('submit',submitMessage);
-$('message-input').addEventListener('input',()=>{trackFollowup('story_input');cancelDiaryPrompt();store('composer',$('message-input').value);resizeInput();updateActions();});
+$('message-input').addEventListener('input',()=>{if($('message-input').value.trim())trackSpace('space_input_started');trackFollowup('story_input');cancelDiaryPrompt();store('composer',$('message-input').value);resizeInput();updateActions();});
 $('message-input').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();void submitMessage();}});
 async function requestLampReply(){
  cancelDiaryPrompt();if(busy||!state||!same())return;
@@ -417,7 +434,8 @@ function connectNotifications(){
  socket.onmessage=event=>{if(!same())return;try{const data=JSON.parse(event.data);window.dispatchEvent(new Event('daily:socket'));if(['encourage_available','encourage_unavailable','seven_day_report','chart_loading_complete'].includes(data.type))window.globalNotificationManager?.storeNotification(data);}catch{}};
  socket.onclose=event=>{if(![1000,1008].includes(event.code)&&same())setTimeout(connectNotifications,5000);};
 }
-window.addEventListener('pagehide',()=>{trackScreenLeft();cancelDiaryPrompt();clearTimeout(poll);socket?.close(1000);activeController?.abort();revokePhotos();});
+window.addEventListener('pageshow',event=>{if(event.persisted){spaceVisit=id();trackSpace('space_entered');}});
+window.addEventListener('pagehide',()=>{resolveDiaryPrompt(activeDiaryPrompt,'leave');trackSpace('space_left');trackScreenLeft();cancelDiaryPrompt();clearTimeout(poll);socket?.close(1000);activeController?.abort();revokePhotos();});
 window.addEventListener('daily:clock',async()=>{
  if(detailId||!same()||!state||busy||editing||$('workspace').dataset.view!=='chat')return;
  const count=state.messages.length,writingId=state.id;

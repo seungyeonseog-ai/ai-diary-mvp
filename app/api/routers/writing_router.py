@@ -180,16 +180,44 @@ def schedule_events(background_tasks, user_id, analytics):
 
 class WritingView(Input):
     event: Literal["diary_draft_displayed", "library_entered", "saved_diary_selected", "saved_diary_displayed",
-                   "library_entered_after_save", "space_entered_after_discard"]
+                   "library_entered_after_save", "space_entered_after_discard",
+                   "space_entered", "space_input_started", "space_left",
+                   "diary_prompt_shown", "diary_prompt_resolved"]
     diary_id: int | None = Field(default=None, strict=True, gt=0)
     navigation_id: UUID | None = None
     visit_id: UUID | None = None
     writing_id: UUID | None = None
+    operation_id: UUID | None = None
+    outcome: Literal["generate", "continue", "dismiss", "leave"] | None = None
 
 
 @router.post("/analytics/view", status_code=204)
 def record_view(data: WritingView, background_tasks: BackgroundTasks,
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if data.event in ("space_entered", "space_input_started", "space_left",
+                      "diary_prompt_shown", "diary_prompt_resolved"):
+        if data.writing_id is None or data.visit_id is None or data.diary_id is not None:
+            raise HTTPException(422)
+        writing = execute(service.owned, db, Writing, str(data.writing_id), user.id)
+        is_prompt = data.event.startswith("diary_prompt_")
+        if is_prompt != (data.operation_id is not None and data.navigation_id is not None):
+            raise HTTPException(422)
+        if not is_prompt and (data.operation_id is not None or data.navigation_id is not None):
+            raise HTTPException(422)
+        if (data.event == "diary_prompt_resolved") != (data.outcome is not None):
+            raise HTTPException(422)
+        if is_prompt:
+            op = execute(service.owned, db, WritingOperation, str(data.operation_id), user.id)
+            if op.writing_id != writing.id or op.kind != "lamp" or op.state != "succeeded":
+                raise HTTPException(409)
+        properties = {"outcome": data.outcome} if data.outcome else {}
+        occurrence = data.navigation_id or f"{writing.id}:{data.visit_id}"
+        background_tasks.add_task(capture_writing_event, data.event, user.id, occurrence, get_kst_now(),
+                                  writing_id=writing.id, operation_id=data.operation_id,
+                                  navigation_id=data.navigation_id, visit_id=data.visit_id, **properties)
+        return
+    if data.operation_id is not None or data.outcome is not None:
+        raise HTTPException(422)
     if data.event in ("library_entered_after_save", "space_entered_after_discard"):
         if data.diary_id is None or data.navigation_id is not None or data.visit_id is None:
             raise HTTPException(422)

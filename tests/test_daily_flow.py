@@ -32,18 +32,18 @@ class DailyTests(unittest.TestCase):
     def test_letter_analytics_mock_transport(self):
         from app.services import posthog_capture
 
-        key=self.ready()
         first,second=uuid4(),uuid4()
-        endpoint=f'/daily/letters/{key}'
         settings={'POSTHOG_ENVIRONMENT':'validation','POSTHOG_ID_KEY':'test-key',
                   'POSTHOG_HOST':'https://us.i.posthog.com','POSTHOG_PROJECT_TOKEN':'test-token'}
         with patch.dict(os.environ,settings),patch.object(posthog_capture,'urlopen') as send:
+            key=self.ready()
+            endpoint=f'/daily/letters/{key}'
             self.client.get('/daily/letters?view=archive')
             self.client.get(endpoint)
-            send.assert_not_called()
+            self.assertEqual(send.call_count,1)
             self.uid=2
             self.assertEqual(self.client.post(f'{endpoint}/view?visit_id={first}&source=today').status_code,404)
-            send.assert_not_called()
+            self.assertEqual(send.call_count,1)
             self.uid=1
             self.assertEqual(self.client.post(f'{endpoint}/view?visit_id={first}&source=today').status_code,200)
             for _ in range(2):
@@ -51,8 +51,9 @@ class DailyTests(unittest.TestCase):
             self.assertEqual(self.client.post(f'{endpoint}/view?visit_id={second}&source=archive').status_code,200)
         events=[json.loads(call.args[0].data) for call in send.call_args_list]
         self.assertEqual([item['event'] for item in events],
-                         ['letter_detail_viewed','letter_saved','letter_detail_viewed'])
-        initial,saved,revisit=[item['properties'] for item in events]
+                         ['letter_available','letter_detail_viewed','letter_saved','letter_detail_viewed'])
+        available,initial,saved,revisit=[item['properties'] for item in events]
+        self.assertEqual(available['letter_id'],initial['letter_id'])
         self.assertEqual(initial['letter_id'],saved['letter_id'])
         self.assertEqual(initial['letter_id'],revisit['letter_id'])
         self.assertNotEqual(initial['visit_id'],revisit['visit_id'])

@@ -85,7 +85,7 @@ services:
 
   web:
     <<: *app
-    environment:
+    environment: &app-with-posthog
       <<: *app-env
       POSTHOG_ENVIRONMENT: ${POSTHOG_ENVIRONMENT:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-}
@@ -108,6 +108,7 @@ services:
 
   celery-worker:
     <<: *app
+    environment: *app-with-posthog
     command: [python, -m, deploy.launch, worker]
     depends_on:
       redis: {condition: service_healthy}

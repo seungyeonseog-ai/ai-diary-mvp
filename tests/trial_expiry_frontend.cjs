@@ -13,7 +13,7 @@ async function fixture(){
  const context=vm.createContext({URL,URLSearchParams,AbortController,TextDecoder,Intl,Date,console,
   document:{visibilityState:'visible',querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener:(key,fn)=>events.set(key,fn)},
   location:{search:'',assign(){}},localStorage:{getItem:()=>''},sessionStorage,setTimeout:()=>1,clearTimeout(){},Event:class{}});
- const ui={$ ,node:()=>new Element(),id:()=> 'synthetic',token:()=> 'identity',owner:()=> '1',json,request:async()=>{},readSSE:async()=>{},dialog:async()=> 'cancel',confirm:async()=> 'cancel',toast(){},logout(){},expire(){},safeNext:x=>x};
+ const ui={recordWritingView(){},recordExtraOpportunity(){},recordReplyObservation(){},$ ,node:()=>new Element(),id:()=> 'synthetic',token:()=> 'identity',owner:()=> '1',json,request:async()=>{},readSSE:async()=>{},dialog:async()=> 'cancel',confirm:async()=> 'cancel',toast(){},logout(){},expire(){},safeNext:x=>x};
  const stub=new vm.SyntheticModule(Object.keys(ui),function(){for(const [key,value] of Object.entries(ui))this.setExport(key,value)},{context});
  const policy=new vm.SourceTextModule(fs.readFileSync('static/js/space/writing_policy.js','utf8'),{context});await policy.link(()=>{});await policy.evaluate();
  let source=fs.readFileSync('static/js/space/writing.js','utf8').replace("if(!token())void expire();else{void boot();connectNotifications();}",'');
@@ -29,7 +29,7 @@ const today=()=>({...old(),id:'today',date:'2026-11-10',server_now:'2026-11-10T0
  await f.events.get('daily:clock')();assert.equal(f.api.stateId(),'today');assert.equal(f.$('message-input').value,'입력 보존');assert.equal(f.$('message-input').disabled,false);
 
  f=await fixture();f.api.fixtureState(old());f.server.set('/writing/old',{...old(),quota:{base_remaining:0,extra_remaining:0}});
- await f.events.get('daily:clock')();assert.equal(f.$('message-input').disabled,true);assert.equal(f.$('lamp-submit').disabled,true);
+ await f.events.get('daily:clock')();assert.equal(f.$('message-input').disabled,true);assert.equal(f.$('lamp-submit').disabled,false);assert.equal(f.$('lamp-submit').dataset.spent,'true');
 
  f=await fixture();f.api.fixtureState(today());f.storage.set('space:1:composer-resume',JSON.stringify({id:'old',date:'2026-11-09',text:'자정 새로고침 입력'}));
  await f.api.restoreDayComposer();f.api.renderChat();assert.equal(f.$('message-input').value,'자정 새로고침 입력');

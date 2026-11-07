@@ -200,11 +200,11 @@ class StreamTests(unittest.TestCase):
         with patch.object(writing_router, "capture_writing_event") as capture:
             self.exercise_extra_analytics()
         self.assertEqual([call.args[0] for call in capture.call_args_list], [
-            "extra_reply_available", "reply_requested", "reply_failed", "reply_requested", "reply_completed",
+            "extra_reply_available", "extra_reply_opportunity", "reply_requested", "reply_failed", "reply_requested", "reply_completed",
             "reply_first_displayed", "reply_completion_displayed", "reply_followup",
         ])
-        self.assertEqual(capture.call_args_list[4].kwargs["reply_kind"], "extra")
-        self.assertEqual(capture.call_args_list[6].kwargs["diary_state"], "none")
+        self.assertEqual(capture.call_args_list[5].kwargs["reply_kind"], "extra")
+        self.assertEqual(capture.call_args_list[7].kwargs["diary_state"], "none")
 
     def test_extra_analytics_mock_transport(self):
         settings = {"POSTHOG_ENVIRONMENT": "validation", "POSTHOG_ID_KEY": "test-key",
@@ -212,9 +212,9 @@ class StreamTests(unittest.TestCase):
         with patch.dict(os.environ, settings), patch.object(posthog_capture, "urlopen") as transport:
             self.exercise_extra_analytics()
         events = [json.loads(call.args[0].data) for call in transport.call_args_list]
-        self.assertEqual(len(events), 8)
-        self.assertEqual(len({event["properties"]["event_id"] for event in events}), 8)
-        reply = [event["properties"] for event in events[1:]]
+        self.assertEqual(len(events), 9)
+        self.assertEqual(len({event["properties"]["event_id"] for event in events}), 9)
+        reply = [event["properties"] for event in events[2:]]
         self.assertEqual(len({props["operation_id"] for props in reply}), 1)
         self.assertEqual(len({props["attempt_id"] for props in reply}), 2)
         self.assertEqual(reply[0]["attempt_id"], reply[1]["attempt_id"])

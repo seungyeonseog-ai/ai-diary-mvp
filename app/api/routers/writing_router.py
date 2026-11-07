@@ -20,6 +20,7 @@ from app.services.writing_stream import response_events
 
 router = APIRouter(prefix="/writing", tags=["writing"])
 logger = logging.getLogger(__name__)
+_analytics_tasks = set()
 MAX_PHOTO_BYTES = 20 * 1024 * 1024
 
 
@@ -215,6 +216,12 @@ def record_view(data: WritingView, background_tasks: BackgroundTasks,
             if op.writing_id != writing.id or op.kind != "lamp" or op.state != "succeeded":
                 raise HTTPException(409)
         properties = {"outcome": data.outcome} if data.outcome else {}
+        if data.event == "diary_prompt_shown":
+            allowance = service.quota(db, user.id, writing, get_kst_now())
+            diary = db.get(DiaryReport, writing.diary_id) if writing.diary_id else None
+            properties.update(measurement_version=2, diary_state=diary.state if diary else "none",
+                              extra_remaining=allowance["extra_remaining"],
+                              extra_allowed="dialogue" in allowance["features"])
         occurrence = data.navigation_id or f"{writing.id}:{data.visit_id}"
         background_tasks.add_task(capture_writing_event, data.event, user.id, occurrence, get_kst_now(),
                                   writing_id=writing.id, operation_id=data.operation_id,
@@ -268,13 +275,15 @@ def record_view(data: WritingView, background_tasks: BackgroundTasks,
 
 
 class ReplyObservation(Input):
-    event: Literal["reply_first_displayed", "reply_completion_displayed", "reply_followup", "reply_screen_left"]
+    event: Literal["reply_first_displayed", "reply_completion_displayed", "reply_followup", "reply_screen_left",
+                   "diary_prompt_window_started", "diary_prompt_window_ended"]
     attempt_id: UUID
     operation_id: UUID
     elapsed_ms: int = Field(strict=True, ge=0, le=86_400_000)
     diary_state: Literal["none", "draft", "saved"] | None = None
     action: Literal["generate_diary", "open_diary", "story_input", "story_sent", "next_reply", "navigate"] | None = None
     stage: Literal["waiting", "streaming", "completed"] | None = None
+    outcome: Literal["shown", "navigate", "hidden", "pagehide", "next_reply", "generate", "logout"] | None = None
 
 
 @router.post("/{writing_id}/analytics/extra-opportunity", status_code=204)
@@ -287,8 +296,14 @@ def extra_opportunity(writing_id: str, background_tasks: BackgroundTasks,
     unresolved = db.query(WritingOperation.id).filter_by(writing_id=writing_id, user_id=user.id).filter(
         WritingOperation.state.in_(("pending", "failed"))).first()
     if quota["base_used"] and quota["extra_remaining"] and not unresolved:
+        diary = db.get(DiaryReport, writing.diary_id) if writing.diary_id else None
+        diary_state = diary.state if diary else "none"
         background_tasks.add_task(capture_writing_event, "extra_reply_available", user.id,
                                   now.date().isoformat(), now, writing_id=writing_id)
+        background_tasks.add_task(capture_writing_event, "extra_reply_opportunity", user.id,
+                                  f"{now.date().isoformat()}:{diary_state}", now, writing_id=writing_id,
+                                  diary_state=diary_state, extra_remaining=quota["extra_remaining"],
+                                  extra_allowed=True, measurement_version=2)
         return
     raise HTTPException(409)
 
@@ -301,7 +316,16 @@ def reply_observed(writing_id: str, data: ReplyObservation, background_tasks: Ba
         raise HTTPException(404)
     if data.event in ("reply_completion_displayed", "reply_followup") and op.state != "succeeded":
         raise HTTPException(409)
-    properties = data.model_dump(include={"elapsed_ms", "diary_state", "action", "stage"}, exclude_none=True)
+    if data.event.startswith("diary_prompt_window_"):
+        if op.state != "succeeded" or op.quota_kind != "base" or data.diary_state != "none":
+            raise HTTPException(409)
+        if (data.event == "diary_prompt_window_ended") != (data.outcome is not None):
+            raise HTTPException(422)
+    elif data.outcome is not None:
+        raise HTTPException(422)
+    properties = data.model_dump(include={"elapsed_ms", "diary_state", "action", "stage", "outcome"}, exclude_none=True)
+    if data.event.startswith("diary_prompt_window_"):
+        properties["measurement_version"] = 2
     key = f"{op.id}:{data.attempt_id}"
     background_tasks.add_task(capture_writing_event, data.event, user.id, key, get_kst_now(),
                               writing_id=writing_id, operation_id=op.id, attempt_id=data.attempt_id,
@@ -320,7 +344,7 @@ def current(writing_id: str, db: Session = Depends(get_db), user: User = Depends
             "messages": [{"id": m.id, "role": m.role, "message": m.message} for m in messages],
             "diary": service.diary_payload(diary) if diary else None,
             "operations": [{"id": op.id, "request_id":op.client_id, "kind":op.kind, "state":op.state,
-                            "source_ids":op.source_ids,
+                            "source_ids":op.source_ids, "quota_kind":op.quota_kind,
                             "retry_after":op.lease_until.isoformat() if op.lease_until else None,
                             "has_generated_result":op.result is not None} for op in operations],
             "quota": service.quota(db, user.id, row, now)}
@@ -376,6 +400,13 @@ async def create_result(writing_id: str, kind: Literal["lamp", "diary"], data: R
     if source is None:
         result = {"diary_id": op.result["diary_id"]} if kind == "diary" else op.result
         return {"operation_id": op.id, "state": op.state, "result": result}
+    if kind == "diary":
+        # 생성 실패도 요청 분모에 남기되 외부 계측 응답을 기다려 UI를 지연시키지 않는다.
+        task = asyncio.create_task(asyncio.to_thread(
+            capture_writing_event, "diary_generation_requested", user.id, op.id, op.created_at,
+            writing_id=writing_id, operation_id=op.id, measurement_version=2))
+        _analytics_tasks.add(task)
+        task.add_done_callback(_analytics_tasks.discard)
     analytics = []
     try:
         result = op.result

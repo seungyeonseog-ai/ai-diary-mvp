@@ -29,6 +29,21 @@ from app.api.dependencies.auth_dependencies import get_current_user
 
 
 class DailyTests(unittest.TestCase):
+    def test_letter_opportunity_ownership_and_stable_key(self):
+        key=self.ready()
+        payload={'event':'letter_opportunity','letter_id':key,'surface':'arrival'}
+        with patch.object(api,'capture_writing_event') as capture:
+            for surface in ('arrival','inbox','notification'):
+                self.assertEqual(self.client.post('/daily/analytics/letter-opportunity',json={**payload,'surface':surface}).status_code,204)
+            self.assertEqual(len({c.args[2] for c in capture.call_args_list}),1)
+            self.assertEqual(capture.call_args.kwargs['letter_id'],key)
+            self.uid=2
+            self.assertEqual(self.client.post('/daily/analytics/letter-opportunity',json=payload).status_code,404)
+            self.uid=1
+            self.assertEqual(self.client.post('/daily/analytics/letter-opportunity',json={**payload,'body':'not allowed'}).status_code,422)
+            self.client.post(f'/daily/letters/{key}/discard')
+            self.assertEqual(self.client.post('/daily/analytics/letter-opportunity',json=payload).status_code,409)
+
     def test_letter_analytics_mock_transport(self):
         from app.services import posthog_capture
 

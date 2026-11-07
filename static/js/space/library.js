@@ -1,5 +1,5 @@
 import {$,node,id,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261104-ui2';
-import {recordWritingView,recordWeeklyView} from './writing_analytics.js?v=20261105-weekly-metrics';
+import {recordWritingView,recordWeeklyView,observeLetterOpportunity} from './writing_analytics.js?v=20261107-metrics2';
 import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261106-covers';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 const cover=coverURL;
@@ -139,6 +139,7 @@ async function loadCards(){
   const letterState=data.encouragement.state,letterReady=letterState==='ready';$('letter-lock').hidden=letterReady;
   const letterCopy=letterReady?['오늘의 응원 편지가 도착했어요.','봉투를 열어 따뜻한 마음을 확인해보세요.']:letterState==='waiting_time'?['오늘의 편지를 기다리고 있어요.','응원 편지가 도착하면 이곳에서 확인할 수 있어요.']:letterState==='pending'?['응원 편지를 준비하고 있어요.','잠시 후 다시 확인해 주세요.']:letterState==='skipped'?['오늘의 편지는 쉬어가요.','예약 시각에 대화가 없었어요. 다음 예약을 기다려주세요.']:letterState==='discarded'?['오늘의 편지를 처리했어요.','다음 편지는 내일 예약 시각에 도착해요.']:['오늘의 편지를 기다리고 있어요.','예약 시각 전 오늘의 이야기를 들려주세요.'];
   $('letter-status').textContent=letterCopy[0];$('letter-note').textContent=letterCopy[1];
+  if(letterReady&&Number.isInteger(data.encouragement.id))observeLetterOpportunity($('letter-status'),[data.encouragement.id],'inbox');
   if(data.weekly.state==='ready'){try{const weekly=await json('/study/weekly/latest');if(same()&&requestSequence===cardSequence)chart(weekly);}catch(error){if(same()&&requestSequence===cardSequence)cardError(error.message);}}
   else{const hint=node('div','weekly-hint');hint.append(node('p','',`대화를 시작한 날부터 ${data.weekly.cycle?.period_days??5}일마다 확인해요.`),node('p','','그 기간에 대화한 날짜가 3일 이상이면 만들어져요.'));$('weekly-preview').replaceChildren(lockIcon(),node('strong','','조금만 더 기록해볼까요?'),node('p','','나만의 주간 차트를 확인할 수 있어요.'),hint);}
  }catch(error){if(same()&&requestSequence===cardSequence&&error.status!==401){$('letter-status').textContent='편지 상태를 불러오지 못했어요.';$('letter-note').textContent='잠시 후 다시 확인해 주세요.';cardError(error.message);}}

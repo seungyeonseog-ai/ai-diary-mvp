@@ -27,6 +27,23 @@ class SeenInput(BaseModel):
     through_id:int=Field(ge=0,strict=True)
 
 
+class LetterOpportunity(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    event:Literal['letter_opportunity']
+    letter_id:int=Field(gt=0,strict=True)
+    surface:Literal['arrival','inbox','notification']
+
+
+@router.post('/analytics/letter-opportunity',status_code=204)
+def letter_opportunity(data:LetterOpportunity,background_tasks:BackgroundTasks,
+                       db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+    row=execute(owned,db,LetterDelivery,data.letter_id,user.id)
+    if row.discarded or row.archive_deleted:
+        raise HTTPException(409,'이미 처리한 편지입니다.')
+    background_tasks.add_task(capture_writing_event,'letter_opportunity',user.id,row.id,get_kst_now(),
+                              letter_id=row.id,surface=data.surface,measurement_version=2)
+
+
 def execute(fn,*args):
     try:return fn(*args)
     except WritingError as exc:raise HTTPException(exc.status,exc.message) from None

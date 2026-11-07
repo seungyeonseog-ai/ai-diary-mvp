@@ -42,6 +42,64 @@ PNG = (b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", struct.pack(">IIBBBBB",1,1,8,2,
 
 
 class WritingFlowTests(unittest.TestCase):
+    def test_state_opportunities_and_prompt_snapshot(self):
+        from uuid import uuid4
+        writing = self.start()
+        self.message(writing)
+        self.generate(writing)
+        op = self.client.get(f'/writing/{writing}').json()['operations'][0]
+        self.assertEqual(op['quota_kind'], 'base')
+        with patch.object(api, 'capture_writing_event') as capture:
+            path = f'/writing/{writing}/analytics/extra-opportunity'
+            self.assertEqual(self.client.post(path).status_code, 204)  # 구형 본문 없는 요청도 호환
+            first = [c for c in capture.call_args_list if c.args[0] == 'extra_reply_opportunity'][-1]
+            self.assertEqual(first.kwargs['diary_state'], 'none')
+            prompt = dict(event='diary_prompt_shown', writing_id=writing, operation_id=op['id'],
+                          navigation_id=str(uuid4()), visit_id=str(uuid4()))
+            self.assertEqual(self.client.post('/writing/analytics/view', json=prompt).status_code, 204)
+            self.assertEqual(capture.call_args.kwargs['extra_remaining'], 2)
+            self.assertTrue(capture.call_args.kwargs['extra_allowed'])
+            self.assertEqual(capture.call_args.kwargs['diary_state'], 'none')
+            diary = self.generate(writing, 'diary', 'd1')['result']['diary_id']
+            self.assertEqual(self.client.post(f'/writing/diaries/{diary}/save',json={'version':1}).status_code,200)
+            self.assertEqual(self.client.post(path).status_code,204)
+            second = [c for c in capture.call_args_list if c.args[0] == 'extra_reply_opportunity'][-1]
+            self.assertEqual(second.kwargs['diary_state'],'saved')
+            self.assertNotEqual(first.args[2],second.args[2])
+            self.owner=2
+            self.assertEqual(self.client.post(path).status_code,404)
+            self.assertEqual(self.client.post('/writing/analytics/view',json=prompt).status_code,404)
+
+    def test_prompt_window_validation_and_stable_dedup_keys(self):
+        from uuid import uuid4
+        writing=self.start();self.message(writing);self.generate(writing)
+        op=self.client.get(f'/writing/{writing}').json()['operations'][0]
+        payload=dict(operation_id=op['id'],attempt_id=str(uuid4()),elapsed_ms=12,diary_state='none')
+        path=f'/writing/{writing}/analytics/reply'
+        with patch.object(api,'capture_writing_event') as capture:
+            self.assertEqual(self.client.post(path,json={**payload,'event':'diary_prompt_window_started'}).status_code,204)
+            for _ in range(2):
+                self.assertEqual(self.client.post(path,json={**payload,'event':'diary_prompt_window_ended','outcome':'navigate'}).status_code,204)
+            self.assertEqual(capture.call_args_list[-1].args[2],capture.call_args_list[-2].args[2])
+            self.assertEqual(self.client.post(path,json={**payload,'event':'diary_prompt_window_ended'}).status_code,422)
+            self.assertEqual(self.client.post(path,json={**payload,'event':'diary_prompt_window_started','outcome':'navigate'}).status_code,422)
+            self.assertEqual(self.client.post(path,json={**payload,'event':'diary_prompt_window_started','diary_state':'saved'}).status_code,409)
+            self.owner=2
+            self.assertEqual(self.client.post(path,json={**payload,'event':'diary_prompt_window_started'}).status_code,404)
+
+    def test_diary_request_recorded_even_on_generation_failure(self):
+        from threading import Event
+        writing=self.start();self.message(writing);self.generate(writing)
+        sent=Event();events=[]
+        def capture(name,*args,**kwargs):
+            if name=='diary_generation_requested':events.append((args,kwargs));sent.set()
+        with patch.object(api,'capture_writing_event',side_effect=capture):
+            self.ai.side_effect=RuntimeError('synthetic failure')
+            self.generate(writing,'diary','d-failure',status=503)
+            self.assertTrue(sent.wait(3))
+        self.assertEqual(len(events),1)
+        self.assertEqual(events[0][1]['writing_id'],writing)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.engine = create_engine("sqlite:///" + str(Path(self.temp.name)/"test.db"),
@@ -154,7 +212,7 @@ class WritingFlowTests(unittest.TestCase):
             self.generate(writing, "lamp", "lamp1")
             replay = self.generate(writing, "diary", "diary1")
             self.assertEqual(replay["result"], {"diary_id": diary_id})
-            self.assertEqual([call.args[0] for call in record.call_args_list],
+            self.assertEqual([call.args[0] for call in record.call_args_list if call.args[0]!='diary_generation_requested'],
                              ["story_started", "reply_completed", "diary_draft_created"])
             view = {"event": "diary_draft_displayed", "diary_id": diary_id}
             self.owner = 2
@@ -219,6 +277,9 @@ class WritingFlowTests(unittest.TestCase):
             ):
                 self.assertEqual(self.client.post("/writing/analytics/view", json=view).status_code, 204)
         events = [json.loads(call.args[0].data) for call in transport.call_args_list]
+        requested = [event for event in events if event['event']=='diary_generation_requested']
+        self.assertEqual(len(requested),1)
+        events = [event for event in events if event['event']!='diary_generation_requested']
         self.assertEqual([event["event"] for event in events], [
             "story_started", "reply_completed", "diary_draft_created", "diary_first_saved",
             "library_entered", "library_entered_after_save", "saved_diary_selected", "saved_diary_displayed",

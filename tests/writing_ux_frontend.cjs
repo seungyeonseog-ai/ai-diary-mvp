@@ -115,6 +115,16 @@ class El{
  assert.deepEqual(replyEvents.map(event=>event.event),['reply_first_displayed','extra_reply_available','reply_completion_displayed','space_input_started','reply_followup']);
  assert.equal(replyEvents[2].diary_state,'saved');assert.equal(replyEvents[4].action,'story_input');
  assert.equal(replyEvents[0].attempt_id,replyEvents[4].attempt_id);
+ // 기본답변 이후 첫 입력이 있어도 안내전 구간은 유지하고 실제 이동 한 번만 기록한다.
+ clockState={...clockState,diary:null,operations:[{id:'base-operation',kind:'lamp',state:'succeeded',quota_kind:'base',request_id:'new-base'}]};
+ operationHeader='base-operation';const windowStart=analyticsCalls.length;
+ await m.sendLamp('new-base');
+ $('message-input').value='추가로 입력';$('message-input').events.input[0]();
+ assert.equal(analyticsCalls.slice(windowStart).filter(([,e])=>e.event==='diary_prompt_window_ended').length,0);
+ windowEvents.get('space:leaving')({detail:'navigate'});windowEvents.get('space:leaving')({detail:'navigate'});
+ const interval=analyticsCalls.slice(windowStart).map(([,e])=>e).filter(e=>e.event.startsWith('diary_prompt_window_'));
+ assert.deepEqual(interval.map(e=>e.event),['diary_prompt_window_started','diary_prompt_window_ended']);
+ assert.equal(interval[1].outcome,'navigate');assert.equal(interval[0].attempt_id,interval[1].attempt_id);
  clockState=null;m.scheduleDiaryPrompt('답변');const beforeIdentityChange=dialogs.length;identity='b';await [...timers.values()][0]();assert.equal(dialogs.length,beforeIdentityChange);
  console.log('PASS writing UX: photo limit persistence/reset, editing text/version preservation, cancel, saved detail navigation, reading timer cancellation and account guard');
 })().catch(e=>{console.error(e);process.exitCode=1});

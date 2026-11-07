@@ -1,14 +1,36 @@
 import {owner,token} from './ui.js?v=20261104-ui2';
 
 const recorded = new Set();
+const exposures = new Map();
+function checkExposures(){
+  for(const [element,entry] of exposures){
+    if(!element.isConnected||entry.identity!==token()||entry.uid!==owner()){entry.observer.disconnect();exposures.delete(element);continue;}
+    if(entry.visible&&document.visibilityState==='visible'&&!element.hidden){
+      for(const letterId of entry.ids)recordWritingSignal('/daily/analytics/letter-opportunity',
+        'letter_opportunity',{letter_id:letterId,surface:entry.surface},letterId);
+      entry.observer.disconnect();exposures.delete(element);
+    }
+  }
+}
+export function observeLetterOpportunity(element,ids,surface){
+  if(!element||typeof IntersectionObserver==='undefined')return;
+  exposures.get(element)?.observer.disconnect();
+  const entry={ids,surface,identity:token(),uid:owner(),visible:false,observer:null};
+  entry.observer=new IntersectionObserver(entries=>{
+    entry.visible=entries.some(item=>item.isIntersecting&&item.intersectionRatio>0);
+    checkExposures();
+  });
+  exposures.set(element,entry);entry.observer.observe(element);
+}
+document.addEventListener('visibilitychange',checkExposures);
 
 export function recordWritingView(event, fields) {
   recordWritingSignal('/writing/analytics/view', event, fields,
     fields.diary_id ?? fields.writing_id ?? '', fields.navigation_id ?? fields.visit_id ?? '');
 }
 
-export function recordExtraOpportunity(writingId, day) {
-  recordWritingSignal(`/writing/${writingId}/analytics/extra-opportunity`, 'extra_reply_available', {}, day);
+export function recordExtraOpportunity(writingId, day, diaryState='none') {
+  recordWritingSignal(`/writing/${writingId}/analytics/extra-opportunity`, 'extra_reply_available', {}, day, diaryState);
 }
 
 export function recordReplyObservation(writingId, event, fields) {

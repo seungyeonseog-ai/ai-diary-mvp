@@ -85,7 +85,7 @@ class HybridMemoryService:
         self.strict_errors = strict_errors
 
     # ---------------------- Public API ----------------------
-    def hybrid_retrieve(self, user_query: str, user_id: int, yymmdd: str, top_k: int = 12) -> List[Dict[str, Any]]:
+    def hybrid_retrieve(self, user_query: str, user_id: int, yymmdd: str, top_k: int = 12, *, unique_sessions: bool = True) -> List[Dict[str, Any]]:
         _t0_all = monotonic()
         q = (user_query or "").strip()
         token_cnt = self._count_tokens(q)
@@ -176,7 +176,13 @@ class HybridMemoryService:
             self._assign_bucket(doc)
 
         # 4) 정렬 및 상위 추림
-        docs = sorted(fused.values(), key=lambda d: d.final_score, reverse=True)[:top_k]
+        ranked = sorted(fused.values(), key=lambda d: d.final_score, reverse=True)
+        if unique_sessions:
+            representatives = {}
+            for doc in ranked:
+                representatives.setdefault((doc.user_id, doc.session_id), doc)
+            ranked = list(representatives.values())
+        docs = ranked[:top_k]
 
         # 5) 출력을 표준 dict로 변환
         out: List[Dict[str, Any]] = []

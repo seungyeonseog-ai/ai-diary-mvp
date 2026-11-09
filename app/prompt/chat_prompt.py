@@ -46,7 +46,7 @@ def _preprocess_query(q: str) -> str:
     return cleaned
 
 # -------------------- 버킷 선별 규칙 --------------------
-def _select_sessions_by_bucket(rows: List[Dict[str, Any]], need: int = 4) -> Dict[str, List[Dict[str, Any]]]:
+def _select_sessions_by_bucket(rows: List[Dict[str, Any]], need: int = 4, *, unique_sessions: bool = True) -> Dict[str, List[Dict[str, Any]]]:
     """
     rows: hybrid_retrieve 결과(final_score desc 정렬 가정 X → 내부에서 정렬)
     규칙:
@@ -57,6 +57,11 @@ def _select_sessions_by_bucket(rows: List[Dict[str, Any]], need: int = 4) -> Dic
     """
     # 정렬
     rows = sorted(rows, key=lambda r: r["score"], reverse=True)
+    if unique_sessions:
+        representatives = {}
+        for row in rows:
+            representatives.setdefault(row["session_id"], row)
+        rows = list(representatives.values())
 
     high = [r for r in rows if r["bucket"] == "high"]
     mid  = [r for r in rows if r["bucket"] == "middle"]

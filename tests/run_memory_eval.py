@@ -2,6 +2,7 @@
 import argparse
 from collections import Counter
 from datetime import datetime
+from functools import partial
 import json
 import os
 from unittest.mock import patch
@@ -9,17 +10,9 @@ from unittest.mock import patch
 from tests.memory_eval_cases import DATE, PROFILES, candidates, cases, session_id, summaries
 
 
-def select_unique(rows, selector, need=4):
-    """Keep the best hit per session, then apply the existing bucket rules."""
-    representatives = {}
-    for row in sorted(rows, key=lambda hit: hit["score"], reverse=True):
-        representatives.setdefault(row["session_id"], row)
-    return selector(list(representatives.values()), need=need)
-
-
 def check(engine, case, prompt, hybrid, stream):
     rows = candidates(case)
-    selector = prompt._select_sessions_by_bucket
+    selector = partial(prompt._select_sessions_by_bucket, unique_sessions=False)
     expected = {session_id(day) for day in case.required}
     own = {session_id(day): text for day, text in summaries(PROFILES[case.user]).items()}
     report = {"id": case.key, "group": case.group, "input": case.source,
@@ -28,7 +21,7 @@ def check(engine, case, prompt, hybrid, stream):
               "fixed_candidates": rows, "conditions": {}}
     for label, select in (
         ("current", selector),
-        ("unique", lambda hits, need: select_unique(hits, selector, need)),
+        ("unique", prompt._select_sessions_by_bucket),
     ):
         with (patch.object(hybrid, "HybridMemoryService") as search,
               patch.object(prompt, "_select_sessions_by_bucket", wraps=select) as pick):

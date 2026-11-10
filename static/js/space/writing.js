@@ -428,7 +428,7 @@ async function allowLeave(){
 }
 async function navigateTo(url){if(await allowLeave()){endPromptWindow('navigate');trackFollowup('navigate');leaving=true;location.assign(url);}}
 async function accountMenu(){if(await dialog('나의 계정',`${localStorage.getItem('nickname')||'나'}님\n이야기는 로그인한 계정에만 보관돼요.`,[{label:'홈페이지',value:'home'},{label:'닫기',value:'cancel'},{label:'로그아웃',value:'logout',primary:true}])==='logout'){if(await allowLeave()){endPromptWindow('logout');await logout();}}else if($('ui-dialog').returnValue==='home')await navigateTo('/');}
-$('account').addEventListener('click',accountMenu);$('settings').addEventListener('click',accountMenu);
+$('account').addEventListener('click',accountMenu);$('settings').addEventListener('click',()=>{trackFollowup('open_settings');void accountMenu();});
 for(const link of document.querySelectorAll('.sidebar a,#diary-back'))link.addEventListener('click',event=>{event.preventDefault();void navigateTo(link.href);});
 let resolvingSidebarAction=false;
 document.addEventListener('click',async event=>{

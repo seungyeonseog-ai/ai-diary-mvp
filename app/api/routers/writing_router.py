@@ -281,7 +281,7 @@ class ReplyObservation(Input):
     operation_id: UUID
     elapsed_ms: int = Field(strict=True, ge=0, le=86_400_000)
     diary_state: Literal["none", "draft", "saved"] | None = None
-    action: Literal["generate_diary", "open_diary", "story_input", "story_sent", "next_reply", "navigate"] | None = None
+    action: Literal["generate_diary", "open_diary", "story_input", "story_sent", "next_reply", "navigate", "open_settings"] | None = None
     stage: Literal["waiting", "streaming", "completed"] | None = None
     outcome: Literal["shown", "navigate", "hidden", "pagehide", "next_reply", "generate", "logout"] | None = None
 

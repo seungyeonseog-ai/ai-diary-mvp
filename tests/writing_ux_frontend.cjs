@@ -4,7 +4,7 @@ class El{
  append(...a){this.children.push(...a)}replaceChildren(...a){this.children=a;this.textContent=''}
  addEventListener(k,f){(this.events[k]??=[]).push(f)}setAttribute(k,v){this[k]=v}focus(){}
  querySelectorAll(tag){return this.children.flatMap(c=>[...(c.tag===tag?[c]:[]),...c.querySelectorAll(tag)])}
- querySelector(){return new El()}
+ querySelector(){return new El()}closest(){return new El()}
 }
 (async()=>{
  const ids=new Map();const $=id=>{if(!ids.has(id))ids.set(id,new El());return ids.get(id)};

@@ -1,6 +1,6 @@
 import {$,node,id,token,owner,json,request,dialog,confirm,logout,expire} from './ui.js?v=20261104-ui2';
 import {recordWritingView,recordWeeklyView,observeLetterOpportunity} from './writing_analytics.js?v=20261107-metrics2';
-import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261106-covers';
+import {calendarCells,shiftMonth,validMonth,libraryState,libraryURL,diaryURL,emotionPoints,shelfBooks,coverURL,chartScale} from './library_model.js?v=20261122-speed2';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
 const cover=coverURL;
 let libraryRecorded=false;

@@ -352,12 +352,16 @@ def current(writing_id: str, db: Session = Depends(get_db), user: User = Depends
 
 @router.post("/{writing_id}/messages")
 def message(writing_id: str, data: MessageInput, background_tasks: BackgroundTasks,
-            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+            db: Session = Depends(get_db), user: User = Depends(get_current_user), include_state: bool = False):
     analytics = []
     row = execute(service.add_message, db.get_bind(), user.id, writing_id, data.request_id, data.message,
                   analytics=analytics)
     schedule_events(background_tasks, user.id, analytics)
-    return {"id": row.id, "role": row.role, "message": row.message}
+    result = {"id": row.id, "role": row.role, "message": row.message}
+    if include_state:
+        db.expire_all()
+        result["snapshot"] = current(writing_id, db, user)
+    return result
 
 
 async def generate(kind, source):

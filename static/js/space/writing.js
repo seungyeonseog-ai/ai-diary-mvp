@@ -1,10 +1,14 @@
-import {$,node,id,token,owner,json,request,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261104-ui2';
-import {replyReadingDelay,PHOTO_LIMIT} from './writing_policy.js?v=20261103-8a';
+import {$,node,id,token,owner,json as apiJson,request as apiRequest,readSSE,dialog,confirm,toast,logout,expire,safeNext} from './ui.js?v=20261104-ui2';
+import {replyReadingDelay,PHOTO_LIMIT,processingCopy} from './writing_policy.js?v=20261122-copy1';
 import {recordExtraOpportunity,recordReplyObservation,recordWritingView} from './writing_analytics.js?v=20261107-metrics2';
 const libraryParams = new URLSearchParams(location.search);
 const libraryNavigation = libraryParams.get('navigation');
 const libraryVisit = libraryParams.get('visit');
 let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null,epoch=0,activeController=null,photoURLs=[],failedPhotos=[];
+let processingText=processingCopy();
+function noteProcessing(path,options={}){if(busy)processingText=processingCopy(path,options.method||'GET');}
+function json(path,options){noteProcessing(path,options);return apiJson(path,options);}
+function request(path,options){noteProcessing(path,options);return apiRequest(path,options);}
 let diaryPromptTimer=null,photoLimitNotice=false,leaving=false;
 function cancelDiaryPrompt(){clearTimeout(diaryPromptTimer);diaryPromptTimer=null;}
 function scheduleDiaryPrompt(text){
@@ -68,7 +72,7 @@ async function restoreDayComposer(){
 function show(view){for(const name of ['loading','chat','generating','diary'])$(name+'-view').hidden=name!==view;$('workspace').dataset.view=view;}
 function error(message,action,label='다시 시도',kind=''){if(!same())return;$('error-message').textContent=message;$('error-panel').dataset.kind=kind;$('error-panel').hidden=false;retry=action;$('retry-action').hidden=!action;$('retry-action').textContent=label;}
 function clearError(){$('error-panel').hidden=true;retry=null;}
-function setBusy(value){busy=value;$('workspace').setAttribute('aria-busy',String(value));updateActions();}
+function setBusy(value){if(value&&!busy)processingText=processingCopy();busy=value;$('workspace').setAttribute('aria-busy',String(value));updateActions();}
 function ops(){return state?.operations||[];}
 function unsubmitted(){const submitted=new Set(ops().filter(o=>o.kind==='lamp').flatMap(o=>o.source_ids||[]));return(state?.messages||[]).filter(m=>m.role==='user'&&!submitted.has(m.id));}
 function latestReply(){return ops().findLast(op=>op.kind==='lamp'&&op.state==='succeeded');}
@@ -189,7 +193,7 @@ async function restore(home=false){
  const unfinished=ops().find(o=>['pending','failed'].includes(o.state));
  if(unfinished){
   const pending=unfinished.state==='pending'&&Date.parse(unfinished.retry_after+'+09:00')>Date.parse(state.server_now);
-  if(pending){if(unfinished.kind==='diary')show('generating');else $('reply-status').textContent='이야기를 정리하고 있어요…';setBusy(true);poll=setTimeout(async()=>{poll=null;try{await fetchState();setBusy(false);await restore();}catch(failure){setBusy(false);error(failure.message,refresh,'상태 다시 확인');}},2000);}
+  if(pending){if(unfinished.kind==='diary')show('generating');else $('reply-status').textContent='이야기를 정리하고 있어요…';setBusy(true);processingText=processingCopy(unfinished.kind==='diary'?'/generate/diary':'/response_stream');poll=setTimeout(async()=>{poll=null;try{await fetchState();setBusy(false);await restore();}catch(failure){setBusy(false);error(failure.message,refresh,'상태 다시 확인');}},2000);}
  else error(unfinished.kind==='diary'?'일기를 완성하지 못했어요. 이야기는 보관되어 있어요.':'답변을 완성하지 못했어요. 이야기는 보관되어 있어요.',()=>unfinished.kind==='diary'?generateDiary(unfinished.request_id):sendLamp(unfinished.request_id),'다시 시도',unfinished.kind==='lamp'?'reply':'');
  }else if(success()&&unsubmitted().length===0){
   $('reply-status').textContent=state.diary?'오늘 나눈 이야기예요.':'이 이야기로 일기를 남길 수 있어요.';
@@ -214,8 +218,8 @@ async function sendMessage(){
  trackFollowup('story_sent');
  await ensureToday();
  let pending=stored('message-request');if(!pending||pending.message!==text)pending={request_id:id(),message:text};store('message-request',pending);
- try{await json(`/writing/${state.id}/messages`,{method:'POST',data:pending});if(!same())return false;
-  store('message-request',null);store('composer',null);$('message-input').value='';resizeInput();await fetchState();renderChat();return true;
+ try{const sent=await json(`/writing/${state.id}/messages?include_state=true`,{method:'POST',data:pending});if(!same())return false;
+  store('message-request',null);store('composer',null);$('message-input').value='';resizeInput();if(sent.snapshot)state=sent.snapshot;else await fetchState();renderChat();return true;
  }catch(failure){if(failure.status!==401)error(failure.message,submitMessage,'이야기 다시 남기기');return false;}
 }
 async function submitMessage(event){event?.preventDefault();if(busy||!state)return;clearError();setBusy(true);try{await sendMessage();}finally{setBusy(false);$('message-input').focus();}}
@@ -384,7 +388,7 @@ $('retry-action').addEventListener('click',()=>retry?.());
 for(const button of document.querySelectorAll('.coming-soon'))button.addEventListener('click',()=>dialog(`${button.dataset.feature}은 준비 중이에요`,'지금은 홈과 서재에서 당신의 이야기를 남겨보세요.'));
 async function allowLeave(){
  cancelDiaryPrompt();
- if(busy){await dialog('처리 중이에요','저장 중인 내용을 보호하기 위해 처리가 끝난 뒤 이동할 수 있어요.');return false;}
+ if(busy){await dialog(...processingText);return false;}
  if(editing||state?.diary?.state==='draft'){
   const draft=state.diary.state==='draft';
   if(!draft){

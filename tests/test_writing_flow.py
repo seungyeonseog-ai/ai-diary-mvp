@@ -137,6 +137,23 @@ class WritingFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["id"]
 
+    def test_message_snapshot_roundtrip_retry_and_account_isolation(self):
+        writing = self.start()
+        path = f"/writing/{writing}/messages?include_state=true"
+        payload = {"request_id": "snapshot-message", "message": "합성 전송 내용"}
+        first = self.client.post(path, json=payload)
+        self.assertEqual(first.status_code, 200)
+        snapshot = first.json()["snapshot"]
+        self.assertEqual(snapshot["id"], writing)
+        self.assertEqual([m["message"] for m in snapshot["messages"]], [payload["message"]])
+        retry = self.client.post(path, json=payload)
+        self.assertEqual(retry.json()["id"], first.json()["id"])
+        self.assertEqual(len(retry.json()["snapshot"]["messages"]), 1)
+        legacy = self.client.post(f"/writing/{writing}/messages", json=payload)
+        self.assertNotIn("snapshot", legacy.json())
+        self.owner = 2
+        self.assertEqual(self.client.post(path, json=payload).status_code, 404)
+
     def message(self, writing, text="합성 이야기", key="msg1"):
         response = self.client.post(f"/writing/{writing}/messages", json={"request_id": key, "message": text})
         self.assertEqual(response.status_code, 200, response.text)

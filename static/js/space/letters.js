@@ -36,7 +36,7 @@ async function recordLetterView(id,source){
 }
 async function renderLetter(id,origin,epoch,source=origin){try{const data=await json(`/daily/letters/${id}`);if(!same()||epoch!==sequence)return;
  pendingLetter=!data.saved&&!data.archive_deleted?id:null;
- status.textContent='';root.replaceChildren();const article=node('article','letter-paper'),lamp=node('img','letter-corner-lamp');lamp.src='/static/images/space/lamp-default-v1-q90.webp';lamp.alt='따뜻하게 빛나는 전등';
+ status.textContent='';root.replaceChildren();const article=node('article','letter-paper'),lamp=node('img','letter-corner-lamp');lamp.src='/static/images/space/lamp-default-v1-web-v2.webp';lamp.alt='따뜻하게 빛나는 전등';
  article.append(lamp,node('p','letter-date',data.date),node('div','letter-body',data.body));const actions=node('div','daily-actions');
  if(data.archive_deleted)actions.append(node('p','','보관함에서 삭제한 편지예요.'));
  else if(!data.saved){for(const [action,label]of [['save','보관함에 저장'],['discard','폐기']]){const button=node('button',action==='save'?'primary':'secondary',label);button.addEventListener('click',()=>act(id,action,origin,epoch,actions));actions.append(button);}}

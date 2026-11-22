@@ -8,5 +8,5 @@ export function emotionPoints(data){if(!Array.isArray(data?.diary_analyses)||!da
 
 // API는 최신 페이지부터 반환한다. 화면에서는 과거→최근→미래 순으로 진열한다.
 export function shelfBooks(books){return [...books.filter(book=>book.state==='saved')].reverse().concat(books.filter(book=>book.state!=='saved'));}
-export function coverURL(id){const covers=['book-cover-v1-q90.webp','book-cover-sage-v1-q90.webp','book-cover-lavender-v1-q90.webp','book-cover-terracotta-v1-q90.webp','book-cover-cocoa-v1-q90.webp'];return '/static/images/space/'+covers[Math.abs(Number(id)||0)%covers.length];}
+export function coverURL(id){const covers=['book-cover-v1-web-v2.webp','book-cover-sage-v1-web-v2.webp','book-cover-lavender-v1-web-v2.webp','book-cover-terracotta-v1-web-v2.webp','book-cover-cocoa-v1-web-v2.webp'];return '/static/images/space/'+covers[Math.abs(Number(id)||0)%covers.length];}
 export function chartScale(points){const extent=Math.max(1,...points.map(point=>Math.abs(point.value)));return {extent,y:value=>80-value/extent*55};}

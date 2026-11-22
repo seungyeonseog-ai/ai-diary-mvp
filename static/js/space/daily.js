@@ -1,14 +1,30 @@
 import {json,node,token,owner,toast,dialog,logout,closeButton} from './ui.js?v=20261104-ui2';
 import {observeLetterOpportunity} from './writing_analytics.js?v=20261107-metrics2';
 const identity=token(),uid=owner(),same=()=>token()===identity&&owner()===uid;
-let stopped=false,timer,lastIds=null,snapshot=0,requesting=false,revision=0;
+let stopped=false,timer,lastIds=null,snapshot=0,requesting=false,revision=0,activeList=null;
+// 계정이 유지되는 현재 문서에서만 목록을 짧게 재사용한다. 원문은 저장하지 않는다.
+const letterLists=new Map(),listTTL=15000;
+const listDay=()=>new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+function cachedList(view){const entry=letterLists.get(view);return entry?.data&&entry.day===listDay()&&Date.now()-entry.at<listTTL?entry.data:null;}
+function getList(view){
+ const cached=cachedList(view);if(cached)return Promise.resolve(cached);
+ const old=letterLists.get(view);if(old?.pending&&old.day===listDay())return old.pending;
+ const entry={day:listDay()};letterLists.set(view,entry);
+ entry.pending=json(`/daily/letters?view=${view}`).then(data=>{
+  if(!same()||stopped)return null;
+  if(letterLists.get(view)!==entry||entry.day!==listDay())return getList(view);
+  entry.data=data;entry.at=Date.now();return data;
+ }).finally(()=>{entry.pending=null;});return entry.pending;
+}
+function warmList(){if(identity&&same()&&!stopped&&document.getElementById('daily-notifications'))void getList('pending').catch(()=>{});}
+function invalidateLists(){letterLists.clear();if(panel.open&&activeList)void list(activeList);else warmList();}
 const panel=node('dialog','ui-dialog daily-panel');panel.setAttribute('aria-label','편지와 알림');document.body.append(panel);
 const title=node('h2'),content=node('div','daily-content'),error=node('p','daily-error'),close=closeButton(panel,'알림 닫기');
 panel.append(title,content,error,close);
-function show(name){revision++;title.textContent=name;content.replaceChildren();error.textContent='';if(!panel.open)panel.showModal();return revision;}
+function show(name){revision++;activeList=null;title.textContent=name;content.replaceChildren();error.textContent='';if(!panel.open)panel.showModal();return revision;}
 panel.addEventListener('cancel',event=>{if(panel.dataset.required==='true')event.preventDefault();});
 panel.addEventListener('keydown',event=>{if(panel.dataset.required==='true'&&event.key==='Escape')event.preventDefault();});
-panel.addEventListener('close',()=>{panel.dataset.required='false';panel.setAttribute('closedby','closerequest');close.hidden=false;});
+panel.addEventListener('close',()=>{revision++;activeList=null;panel.dataset.required='false';panel.setAttribute('closedby','closerequest');close.hidden=false;});
 function fail(exc){if(same())error.textContent=exc.message;}
 async function settings({waitForClose=false}={}){
  const epoch=show('응원 받을 시간');
@@ -24,11 +40,15 @@ async function settings({waitForClose=false}={}){
 }
 async function list(view='pending'){
  const epoch=show(view==='archive'?'보관한 편지':'알림');
- try{const data=await json(`/daily/letters?view=${view}`);if(!same()||epoch!==revision)return;
+ activeList=view;
+ const cached=cachedList(view);
+ if(!cached)content.append(node('p','soft-copy','편지 목록을 불러오고 있어요.'));
+ try{const data=cached||await getList(view);if(!data||!same()||epoch!==revision||!panel.open)return;
+  content.replaceChildren();
   if(!data.items.length)content.append(node('p','',view==='archive'?'아직 보관한 편지가 없어요.':'처리하지 않은 편지가 없어요.'));
   for(const item of data.items){const button=node('button','letter-list-item',`${item.date}의 응원 편지${item.viewed?' · 열어본 편지':''}`);button.addEventListener('click',()=>openLetter(item.id,view));content.append(button);if(view==='pending')observeLetterOpportunity(button,[item.id],'notification');}
   if(view==='pending')content.append(node('p','soft-copy','오늘 받은편지가 비활성화된 뒤에도 놓친 편지는 여기에서 열 수 있어요.'));
- }catch(exc){fail(exc);}
+ }catch(exc){if(!same()||epoch!==revision||!panel.open)return;content.replaceChildren();fail(exc);const retry=node('button','primary','다시 불러오기');retry.addEventListener('click',()=>void list(view));content.append(retry);}
 }
 async function openLetter(id,origin='today'){panel.close();window.dispatchEvent(new CustomEvent('space:leaving'));location.assign(`/letters?letter=${encodeURIComponent(id)}${origin==='archive'?'&view=archive':origin==='pending'?'&source=notification':'&source=today'}`);}
 async function today(){try{const data=await json('/daily/inbox');if(!same())return;if(data.letter)await openLetter(data.letter.id);else toast(data.state==='skipped'?'예약 시각에 대화가 없어 오늘 편지는 쉬어가요.':data.state==='discarded'?'오늘 편지는 이미 처리했어요.':`응원 예약 시간은 ${data.hour}:00예요.`);}catch(exc){toast(exc.message);}}
@@ -60,13 +80,14 @@ function start(){
  for(const button of document.querySelectorAll('.coming-soon'))button.addEventListener('click',event=>{event.stopImmediatePropagation();void dialog(`${button.dataset.feature}은 준비 중이에요`,'지금은 홈과 서재에서 당신의 이야기를 남겨보세요.');},true);
  // 기존 설정 버튼의 계정 메뉴와 동시에 열리지 않게 별도 이벤트를 받는다.
  document.getElementById('settings')?.addEventListener('click',event=>{event.stopImmediatePropagation();void settings();},true);
- void refresh();void inboxStatus();timer=setInterval(()=>{void refresh();void inboxStatus();window.dispatchEvent(new Event('daily:clock'));},15000);
+ warmList();void refresh();void inboxStatus();timer=setInterval(()=>{warmList();void refresh();void inboxStatus();window.dispatchEvent(new Event('daily:clock'));},15000);
  // 첫 안내와 응원 설정은 access_status.js의 한 흐름으로 제공한다.
 }
-window.addEventListener('daily:socket',()=>void refresh());
-window.addEventListener('daily:changed',()=>void inboxStatus());
-window.addEventListener('space:identity-cleared',()=>{stopped=true;revision++;clearInterval(timer);panel.close();content.replaceChildren();badge(0);document.getElementById('daily-arrival')?.remove();});
-window.addEventListener('pagehide',()=>{stopped=true;clearInterval(timer);});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refresh();});
+window.addEventListener('daily:socket',()=>{invalidateLists();void refresh();});
+window.addEventListener('daily:changed',()=>{invalidateLists();void inboxStatus();});
+window.addEventListener('storage',event=>{if(event.key==='space:letters-revision')invalidateLists();});
+window.addEventListener('space:identity-cleared',()=>{stopped=true;letterLists.clear();revision++;clearInterval(timer);panel.close();content.replaceChildren();badge(0);document.getElementById('daily-arrival')?.remove();});
+window.addEventListener('pagehide',()=>{stopped=true;letterLists.clear();clearInterval(timer);});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){invalidateLists();void refresh();}});
 start();
 export {settings,list,openLetter};

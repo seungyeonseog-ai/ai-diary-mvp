@@ -1,6 +1,6 @@
 {% extends "ui_base.html" %}{% block title %}서재 · 나의 공간{% endblock %}
 {% block body_class %}space-page library-page{% endblock %}
-{% block head %}<link rel="modulepreload" href="/static/js/space/library_model.js?v=20261122-speed2"><link rel="modulepreload" href="/static/js/space/writing_analytics.js?v=20261105-weekly-metrics"><link rel="stylesheet" href="/static/css/library.css?v=20261106-speed1">{% endblock %}
+{% block head %}{% for cover in ['book-cover-v1','book-cover-sage-v1','book-cover-lavender-v1','book-cover-terracotta-v1','book-cover-cocoa-v1'] %}<link rel="preload" as="image" href="/static/images/space/{{cover}}-web-v2.webp">{% endfor %}<link rel="modulepreload" href="/static/js/space/library_model.js?v=20261122-speed2"><link rel="modulepreload" href="/static/js/space/writing_analytics.js?v=20261107-metrics2"><link rel="stylesheet" href="/static/css/library.css?v=20261106-speed1">{% endblock %}
 {% block content %}{% include "space_sidebar.html" %}
 <main id="library-workspace" class="workspace library-workspace{% if request.query_params.get("view") in ["calendar","list"] %} more-workspace{% endif %}" aria-busy="true">
 <header id="library-hero" class="library-hero"{% if request.query_params.get("view") in ["calendar","list"] %} hidden{% endif %}><h1>서재</h1><p>당신의 소중한 이야기들이<br>차곡차곡 모여 있는 공간이에요.</p></header>

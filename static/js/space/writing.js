@@ -4,7 +4,7 @@ import {recordExtraOpportunity,recordReplyObservation,recordWritingView} from '.
 const libraryParams = new URLSearchParams(location.search);
 const libraryNavigation = libraryParams.get('navigation');
 const libraryVisit = libraryParams.get('visit');
-let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null,epoch=0,activeController=null,photoURLs=[],failedPhotos=[];
+let state=null,busy=false,editing=false,editingVersion=null,retry=null,poll=null,epoch=0,activeController=null,failedPhotos=[];
 let processingText=processingCopy();
 function noteProcessing(path,options={}){if(busy)processingText=processingCopy(path,options.method||'GET');}
 function json(path,options){noteProcessing(path,options);return apiJson(path,options);}
@@ -289,7 +289,8 @@ async function generateDiary(requestId){
  finally{setBusy(false);}
 }
 
-function revokePhotos(){for(const url of photoURLs)URL.revokeObjectURL(url);photoURLs=[];}
+const photoCards=new Map();
+function revokePhotos(){for(const card of photoCards.values())if(card.url)URL.revokeObjectURL(card.url);photoCards.clear();}
 async function loadDiary(){
  const diaryId=state.diary.id;const detail=await json(`/writing/diaries/${diaryId}`);if(!same())return;state.diary=detail;
  editing=false;$('edit-form').hidden=true;$('diary-title').hidden=false;$('diary-body').hidden=false;
@@ -305,13 +306,28 @@ async function loadDiary(){
  await renderPhotos(detail);if(stored(`edit-${detail.id}`))beginEdit({restore:true});
 }
 async function renderPhotos(detail){
- revokePhotos();$('photos').replaceChildren();const renderEpoch=++epoch;
- for(let index=0;index<(detail.photos||[]).length;index++){
-  const photo=detail.photos[index],figure=node('figure','photo-card');const image=node('img');image.alt=`첨부 사진 ${index+1}`;
-  const remove=node('button','', '×');remove.setAttribute('aria-label',`첨부 사진 ${index+1} 삭제`);remove.addEventListener('click',()=>removePhoto(photo.id));remove.disabled=busy;remove.hidden=detail.state==='saved'&&!editing;figure.append(image,remove);$('photos').append(figure);
-  try{const response=await request(photo.url);const url=URL.createObjectURL(await response.blob());if(!same()||epoch!==renderEpoch){URL.revokeObjectURL(url);return;}photoURLs.push(url);image.src=url;}
-  catch(failure){if(same()&&failure.status!==401){figure.append(node('figcaption','','사진을 불러오지 못했어요.'));error(failure.message,()=>loadDiary(),'사진 다시 불러오기');}}
- }
+ const renderEpoch=++epoch,photos=detail.photos||[],keys=new Set(photos.map(photo=>`${detail.id}:${photo.id}:${photo.url}`));
+ for(const [key,card]of photoCards)if(!keys.has(key)){if(card.url)URL.revokeObjectURL(card.url);photoCards.delete(key);}
+ const cards=photos.map((photo,index)=>{
+  const key=`${detail.id}:${photo.id}:${photo.url}`;let card=photoCards.get(key);
+  if(!card){const figure=node('figure','photo-card'),image=node('img'),remove=node('button','','×');
+   remove.addEventListener('click',()=>removePhoto(photo.id));figure.append(image,remove);card={figure,image,remove};photoCards.set(key,card);
+  }
+  card.image.alt=`첨부 사진 ${index+1}`;card.remove.setAttribute('aria-label',`첨부 사진 ${index+1} 삭제`);card.remove.disabled=busy;card.remove.hidden=detail.state==='saved'&&!editing;
+  return {key,photo,card};
+ });
+ $('photos').replaceChildren(...cards.map(({card})=>card.figure));
+ await Promise.all(cards.map(async({key,photo,card})=>{
+  try{
+   if(!card.url&&!card.pending){card.figure.replaceChildren(card.image,card.remove);
+    card.pending=(async()=>{const response=await request(photo.url),url=URL.createObjectURL(await response.blob());
+     if(!same()||photoCards.get(key)!==card){URL.revokeObjectURL(url);return;}
+     card.url=url;card.image.src=url;
+    })().finally(()=>{card.pending=null;});
+   }
+   if(card.pending)await card.pending;
+  }catch(failure){if(same()&&epoch===renderEpoch&&failure.status!==401){card.figure.append(node('figcaption','','사진을 불러오지 못했어요.'));error(failure.message,()=>loadDiary(),'사진 다시 불러오기');}}
+ }));
 }
 function beginEdit({restore=false}={}){if((busy&&!restore)||editing||!same())return;clearError();editing=true;const draft=stored(`edit-${state.diary.id}`);$('edit-title').value=draft?.title??state.diary.title;$('edit-body').value=draft?.body??state.diary.body;
  editingVersion=draft?(draft.version||0):state.diary.version;

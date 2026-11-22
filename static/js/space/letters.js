@@ -2,6 +2,7 @@ import {$,json,node,token,owner,dialog,confirm,expire,id as newId} from './ui.js
 const identity=token(),uid=owner(),same=()=>identity===token()&&uid===owner();
 let sequence=0,view='today',lastSignature=null,retry=null,polling=false,acting=false;
 let pendingLetter=null,leaving=false;
+function notifyLettersChanged(){window.dispatchEvent(new Event('daily:changed'));try{localStorage.setItem('space:letters-revision',newId());}catch{}}
 const root=$('letter-content'),status=$('daily-inbox-status'),error=$('letter-page-error');
 function select(next){view=next;$('daily-inbox').textContent=view==='received'?'받은편지':'오늘 받은편지';for(const [id,name]of [['daily-inbox','today'],['daily-archive','archive']]){const selected=name===view||name==='today'&&view==='received';$(id).setAttribute('aria-selected',String(selected));$(id).tabIndex=selected?0:-1;}$('letter-page-panel').setAttribute('aria-labelledby',view!=='archive'?'daily-inbox':'daily-archive');}
 function route(next,key,source){const params=new URLSearchParams();if(next==='archive')params.set('view','archive');if(key)params.set('letter',key);if(next==='received'&&['today','notification'].includes(source))params.set('source',source);history.replaceState(history.state,'','/letters'+(params.size?'?'+params:''));}
@@ -27,7 +28,7 @@ async function recordLetterView(id,source){
  history.replaceState({...state,letterVisit:{...visit,letters:[...visit.letters,id]}},'');
  try{
   const params=new URLSearchParams({visit_id:visit.id,source});
-  await json(`/daily/letters/${id}/view?${params}`,{method:'POST'});
+  await json(`/daily/letters/${id}/view?${params}`,{method:'POST'});if(same())notifyLettersChanged();
  }catch(exc){
   const current=history.state?.letterVisit;
   if(current?.id===visit.id)history.replaceState({...history.state,letterVisit:{...current,letters:current.letters.filter(key=>key!==id)}},'');
@@ -49,7 +50,7 @@ async function act(id,action,origin,epoch,actions){
  try{
   if(action!=='save'&&await confirm(action==='discard'?'편지를 폐기할까요?':'보관함에서 삭제할까요?',action==='discard'?'폐기한 오늘 편지는 다시 받을 수 없어요.':'보관함에서 이 편지를 삭제합니다.')!=='ok')return;
   if(!same()||epoch!==sequence)return;buttons.forEach(b=>b.disabled=true);
-  await json(`/daily/letters/${id}/${action}`,{method:'POST'});if(!same()||epoch!==sequence)return;pendingLetter=null;window.dispatchEvent(new Event('daily:changed'));if(origin==='archive')await renderArchive();else if(origin==='received'&&action==='save')await open(id,'received');else await renderToday();
+  await json(`/daily/letters/${id}/${action}`,{method:'POST'});if(!same()||epoch!==sequence)return;pendingLetter=null;notifyLettersChanged();if(origin==='archive')await renderArchive();else if(origin==='received'&&action==='save')await open(id,'received');else await renderToday();
  }catch(exc){if(epoch===sequence)fail(exc,()=>open(id,origin));}
  finally{acting=false;buttons.forEach(b=>b.disabled=false);}
 }
@@ -63,7 +64,7 @@ async function resolveBeforeLeaving(target){
   if(!same()||pendingLetter!==id||!['save','discard'].includes(action))return;
   await json(`/daily/letters/${id}/${action}`,{method:'POST'});
   if(!same()||pendingLetter!==id)return;
-  pendingLetter=null;window.dispatchEvent(new Event('daily:changed'));target.click();
+  pendingLetter=null;notifyLettersChanged();target.click();
  }catch(exc){fail(exc,()=>resolveBeforeLeaving(target));}
  finally{leaving=false;}
 }

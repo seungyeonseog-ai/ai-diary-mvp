@@ -6,7 +6,7 @@
 
 **💬 대화하기　·　✍️ 일기 만들기　·　📚 서재　·　💌 응원 편지**
 
-[🌐 웹 서비스 바로가기](https://matabus-pilot-1.taildf2aa2.ts.net/)　|　[✉️ 이용 계정 요청](mailto:gptssy0216@gmail.com)
+[🌐 웹 서비스 바로가기](https://matabus-pilot-1.taildf2aa2.ts.net/)　
 
 > 현재 **초대 계정으로만 이용할 수 있습니다.**  
 > 이용을 원하시면 **gptssy0216@gmail.com**으로 로그인 계정 발급을 요청해 주세요.
